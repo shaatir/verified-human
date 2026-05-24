@@ -1,50 +1,50 @@
-/* 💜 Great Question AI Theme - Premium Light SaaS Visual Aesthetic */
+/* 🖤 GitHub Dark Theme Clean Visual Aesthetic */
 
 :root {
-    /* Great Question Design System Tokens */
-    --bg-base: #fafbfd;                  /* Premium soft off-white background */
-    --bg-surface: #ffffff;               /* Crisp solid white for containers */
-    --bg-surface-solid: #ffffff;
-    --border-color: #eaeafd;             /* Elegant lavender/indigo border */
-    --border-glow: #5850ec;              /* GQ Primary brand glow */
+    /* GitHub Visual System Tokens */
+    --bg-base: #0d1117;                  /* GitHub Base dark gray-blue */
+    --bg-surface: #161b22;               /* GitHub Panel/Card background */
+    --bg-surface-solid: #161b22;
+    --border-color: #30363d;             /* GitHub Border gray */
+    --border-glow: #8b949e;
     
-    /* Semantic Actions & Branding */
-    --color-primary: #5850ec;            /* Great Question Signature Indigo */
-    --color-primary-glow: rgba(88, 80, 236, 0.05);
-    --color-primary-hover: #4f46e5;
+    /* Semantic Actions */
+    --color-primary: #58a6ff;            /* GitHub Blue link */
+    --color-primary-glow: rgba(88, 166, 255, 0.08);
+    --color-primary-hover: #1f6feb;      /* GitHub Blue link hover */
     
     /* Status Badge & Gauge Highlights */
-    --color-approved: #059669;           /* Emerald Green */
-    --color-approved-glow: #d1fae5;
-    --color-flagged: #d97706;            /* Amber Orange */
-    --color-flagged-glow: #fef3c7;
-    --color-rejected: #dc2626;           /* Rose Red */
-    --color-rejected-glow: #fee2e2;
-    --color-pending: #4b5563;            /* Slate Gray */
-    --color-pending-glow: #f3f4f6;
+    --color-approved: #2ea44f;           /* GitHub Green success */
+    --color-approved-glow: rgba(46, 164, 79, 0.15);
+    --color-flagged: #d29922;            /* GitHub Warning Orange */
+    --color-flagged-glow: rgba(210, 153, 34, 0.15);
+    --color-rejected: #f85149;           /* GitHub Danger Red */
+    --color-rejected-glow: rgba(248, 81, 73, 0.15);
+    --color-pending: #8b949e;            /* Muted gray */
+    --color-pending-glow: rgba(139, 148, 158, 0.15);
     
     /* Text Hierarchy */
-    --text-main: #1f2937;                /* Dark neutral text */
-    --text-muted: #4b5563;               /* Muted body text */
-    --text-light: #6b7280;               /* Light label text */
-    --text-dark: #111827;                /* Heading title text */
+    --text-main: #c9d1d9;                /* GitHub main text color */
+    --text-muted: #8b949e;               /* GitHub secondary gray text */
+    --text-light: #484f58;               /* GitHub darker gray text */
+    --text-dark: #f0f6fc;                /* GitHub active white text */
     
     /* Typography */
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    --font-serif: 'Source Serif 4', Georgia, serif;
-    --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --font-serif: Georgia, serif;
+    --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     
-    /* Geometry & Timing */
-    --radius-lg: 12px;
-    --radius-md: 8px;
+    /* Geometry */
+    --radius-lg: 6px;                    /* GitHub standard corners */
+    --radius-md: 6px;
     --radius-sm: 4px;
-    --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition: all 0.15s ease-in-out;
     
-    /* Shadows */
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
-    --shadow-lg: 0 10px 15px -3px rgba(88, 80, 236, 0.04), 0 4px 6px -2px rgba(88, 80, 236, 0.02);
-    --shadow-premium: 0 20px 25px -5px rgba(88, 80, 236, 0.08), 0 10px 10px -5px rgba(88, 80, 236, 0.03);
+    /* Shadows - subtle */
+    --shadow-sm: 0 1px 0 rgba(0,0,0,0.1);
+    --shadow-md: 0 3px 6px rgba(0,0,0,0.15);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.2);
+    --shadow-premium: 0 12px 28px rgba(0,0,0,0.3);
 }
 
 /* --- Base Rules & Structure --- */
@@ -75,7 +75,7 @@ body {
     transform: translateX(-50%);
     width: 1000px;
     height: 600px;
-    background: radial-gradient(circle, rgba(88, 80, 236, 0.04) 0%, rgba(250, 251, 253, 0) 70%);
+    background: radial-gradient(circle, rgba(56, 139, 253, 0.025) 0%, rgba(13, 17, 23, 0) 70%);
     pointer-events: none;
     z-index: -1;
 }
@@ -85,7 +85,7 @@ body {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background: rgba(88, 80, 236, 0.03);
+    background: rgba(210, 153, 34, 0.04);
     opacity: 0;
     z-index: 99999;
     transition: opacity 0.15s ease;
@@ -94,7 +94,7 @@ body {
     opacity: 1;
 }
 
-/* Premium Light Scrollbars */
+/* Premium Dark Scrollbars */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -103,12 +103,12 @@ body {
     background: var(--bg-base);
 }
 ::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
+    background: var(--border-color);
     border-radius: var(--radius-sm);
     border: 2px solid var(--bg-base);
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #cbd5e1;
+    background: var(--text-muted);
 }
 
 /* --- Typography --- */
@@ -214,7 +214,7 @@ h3 {
     font-size: 1.2rem;
     color: var(--text-muted);
     max-width: 650px;
-    font-family: var(--font-serif);
+    font-family: var(--font-sans);
     font-weight: 400;
 }
 
@@ -269,15 +269,15 @@ h3 {
 }
 
 .cta-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(88, 80, 236, 0.35);
-    box-shadow: var(--shadow-premium);
+    transform: translateY(-2px);
+    border-color: #8b949e;
+    box-shadow: var(--shadow-lg);
 }
 
 .cta-card .card-glow {
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at top right, rgba(88, 80, 236, 0.03), transparent 60%);
+    background: radial-gradient(circle at top right, rgba(56, 139, 253, 0.02), transparent 60%);
     pointer-events: none;
 }
 
@@ -324,9 +324,9 @@ h3 {
 
 /* --- Secondary Gray Navigation Buttons --- */
 .btn-back {
-    background: var(--bg-surface);
-    border: 1px solid #d1d5db;
-    color: var(--text-muted);
+    background: #21262d;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-md);
     cursor: pointer;
@@ -338,9 +338,9 @@ h3 {
 }
 
 .btn-back:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: var(--color-primary-glow);
+    border-color: #8b949e;
+    color: var(--text-dark);
+    background: #30363d;
 }
 
 /* Form Category Switcher Tabs */
@@ -374,13 +374,13 @@ h3 {
 
 .tab-btn:hover {
     color: var(--text-dark);
-    border-bottom-color: rgba(88, 80, 236, 0.2);
+    border-bottom-color: var(--text-muted);
 }
 
 .tab-btn.active {
     background: transparent;
-    border-bottom: 2px solid var(--color-primary);
-    color: var(--color-primary);
+    border-bottom: 2px solid #f78166; /* GitHub active orange indicator */
+    color: var(--text-dark);
     font-weight: 700;
 }
 
@@ -424,9 +424,9 @@ h3 {
 
 .profile-btn {
     flex-grow: 1;
-    background: var(--bg-surface);
-    border: 1px solid #d1d5db;
-    color: var(--text-muted);
+    background: #21262d;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
     padding: 0.75rem 1.25rem;
     border-radius: var(--radius-md);
     font-family: var(--font-sans);
@@ -442,16 +442,15 @@ h3 {
 }
 
 .profile-btn:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: var(--color-primary-glow);
+    border-color: #8b949e;
+    color: var(--text-dark);
+    background: #30363d;
 }
 
 .profile-btn.active {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: #ffffff;
-    box-shadow: 0 4px 10px rgba(88, 80, 236, 0.2);
+    background: #21262d;
+    border-color: #f78166; /* GitHub active orange border */
+    color: var(--text-dark);
 }
 
 /* Two-Column Grid */
@@ -494,31 +493,31 @@ h3 {
 
 .btn-demo-trigger {
     width: 100%;
-    background: #10b981;
-    border: none;
+    background: var(--color-approved);
+    border: 1px solid rgba(240, 246, 252, 0.1);
     color: #ffffff;
     padding: 0.85rem;
     border-radius: var(--radius-md);
     font-family: var(--font-sans);
     font-size: 0.95rem;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    box-shadow: 0 4px 6px rgba(16, 185, 129, 0.15);
+    box-shadow: var(--shadow-sm);
 }
 
 .btn-demo-trigger:hover:not(:disabled) {
-    background-color: #059669;
-    box-shadow: 0 6px 12px rgba(16, 185, 129, 0.25);
+    background-color: #2ea44f;
 }
 
 .btn-demo-trigger:disabled {
-    background: #e2e8f0;
-    color: #94a3b8;
+    background: #21262d;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
     cursor: not-allowed;
     box-shadow: none;
 }
@@ -553,8 +552,8 @@ form {
 }
 
 .question-prompt {
-    font-family: var(--font-serif);
-    font-size: 0.95rem;
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
     color: var(--color-primary);
     background: var(--color-primary-glow);
     padding: 0.6rem 0.85rem;
@@ -565,8 +564,8 @@ form {
 }
 
 input[type="text"], textarea {
-    background-color: #ffffff;
-    border: 1px solid #d1d5db;
+    background-color: #0d1117;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-main);
     font-family: var(--font-sans);
@@ -575,19 +574,19 @@ input[type="text"], textarea {
     transition: var(--transition);
     outline: none;
     width: 100%;
-    box-shadow: var(--shadow-sm);
+    box-shadow: inset 0 1px 0 rgba(0,0,0,0.2);
 }
 
 input[type="text"]:focus:not(:disabled), textarea:focus:not(:disabled) {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(88, 80, 236, 0.15);
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
 }
 
 input:disabled, textarea:disabled {
     cursor: not-allowed;
-    background-color: #f3f4f6;
-    color: #9ca3af;
-    border-color: #e5e7eb;
+    background-color: #161b22;
+    color: var(--text-muted);
+    border-color: var(--border-color);
 }
 
 /* Bouncing evaluate helper pointer arrow */
@@ -631,33 +630,32 @@ input:disabled, textarea:disabled {
 
 /* Primary buttons (Signature Brand Color) */
 .btn-primary {
-    background-color: var(--color-primary);
-    border: 1px solid rgba(88, 80, 236, 0.1);
+    background-color: #238636;
+    border: 1px solid rgba(240, 246, 252, 0.1);
     color: #ffffff;
     padding: 0.85rem;
     border-radius: var(--radius-md);
     font-family: var(--font-sans);
     font-size: 0.95rem;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     transition: var(--transition);
-    box-shadow: 0 4px 6px rgba(88, 80, 236, 0.1);
+    box-shadow: var(--shadow-sm);
     width: 100%;
 }
 
 .btn-primary:hover:not(:disabled) {
-    background-color: var(--color-primary-hover);
-    box-shadow: 0 6px 15px rgba(88, 80, 236, 0.2);
+    background-color: #2ea44f;
 }
 
 .btn-primary:disabled {
-    background: #e2e8f0;
-    border: 1px solid #cbd5e1;
-    color: #94a3b8;
+    background-color: #21262d;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
     cursor: not-allowed;
     box-shadow: none;
 }
@@ -677,8 +675,8 @@ input:disabled, textarea:disabled {
 }
 
 .telemetry-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #161b22;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 0.75rem 1rem;
     display: flex;
@@ -690,7 +688,7 @@ input:disabled, textarea:disabled {
 .telemetry-card .label {
     font-size: 0.65rem;
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -709,8 +707,9 @@ input:disabled, textarea:disabled {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    background: #f3f4f6;
-    color: var(--text-muted);
+    background: #21262d;
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
 }
 
 .status-indicator.live {
@@ -775,7 +774,7 @@ input:disabled, textarea:disabled {
 
 /* Gauge Score Card Panel */
 .score-summary-card {
-    background: #f8fafc;
+    background: #161b22;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: 1.25rem 1.5rem;
@@ -799,7 +798,7 @@ input:disabled, textarea:disabled {
 }
 
 .progress-ring__circle-bg {
-    stroke: #e2e8f0;
+    stroke: #21262d;
 }
 
 .progress-ring__circle {
@@ -866,7 +865,7 @@ input:disabled, textarea:disabled {
 }
 
 .tier-section {
-    background: #ffffff;
+    background: #161b22;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 1rem 1.25rem;
@@ -877,7 +876,7 @@ input:disabled, textarea:disabled {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--border-color);
     padding-bottom: 0.5rem;
     margin-bottom: 0.5rem;
 }
@@ -926,8 +925,8 @@ input:disabled, textarea:disabled {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.4);
-    backdrop-filter: blur(12px);
+    background: rgba(13, 17, 23, 0.7);
+    backdrop-filter: blur(8px);
     z-index: 9999;
     display: flex;
     align-items: center;
@@ -942,10 +941,10 @@ input:disabled, textarea:disabled {
 }
 
 .modal-card {
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #ffffff;
-    border-radius: 16px;
-    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.2);
+    background: #161b22;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
     max-width: 650px;
     width: 90%;
     max-height: 85vh;
@@ -965,9 +964,9 @@ input:disabled, textarea:disabled {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: #f1f5f9;
-    border: none;
-    color: var(--text-light);
+    background: #21262d;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
     font-size: 1.5rem;
     cursor: pointer;
     display: flex;
@@ -977,7 +976,7 @@ input:disabled, textarea:disabled {
 }
 
 .btn-close-modal:hover {
-    background: #e2e8f0;
+    background: #30363d;
     color: var(--text-dark);
 }
 
@@ -990,8 +989,8 @@ input:disabled, textarea:disabled {
 }
 
 .modal-telemetry-pill {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #0d1117;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 0.75rem 1rem;
     display: flex;
@@ -1015,7 +1014,7 @@ input:disabled, textarea:disabled {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 0.75rem;
-    background: #ffffff;
+    background: #0d1117;
 }
 
 /* Gauge Semantic states coloring */
