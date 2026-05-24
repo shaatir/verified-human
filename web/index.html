@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verified-Human | Advanced Fraud & Semantic Security Pipeline</title>
+    
+    <!-- Premium Google Fonts matching Great Question -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="glow-bg"></div>
+    <div class="focus-flash" id="focus-flash-overlay"></div>
+    
+    <!-- ========================================== -->
+    <!-- 🏠 VIEW 1: HOME LANDING SCREEN             -->
+    <!-- ========================================== -->
+    <section id="screen-home" class="view-screen">
+        <div class="home-hero">
+            <div class="logo-circle">🛡️</div>
+            <h1>Verified-Human</h1>
+            <p class="home-subtitle">Advanced Fraud Operations & Semantic Security Pipeline</p>
+            
+            <div class="pipeline-badges">
+                <span class="badge-pill">⏱️ Telemetry Heuristics</span>
+                <span class="badge-pill">🧠 Semantic Agent</span>
+                <span class="badge-pill">🌐 OSINT Verification</span>
+            </div>
+        </div>
+
+        <div class="cta-grid">
+            <!-- PATH A: MANUAL TEST -->
+            <div class="cta-card" id="cta-manual">
+                <div class="card-glow"></div>
+                <div class="card-icon">📝</div>
+                <h2>Fill in a Form</h2>
+                <p>Experience the security screening like a real participant. Type naturally to see how your own live behavioral cadence scores.</p>
+                <span class="cta-btn-label">Start Manual Test 👉</span>
+            </div>
+
+            <!-- PATH B: WATCH DEMO -->
+            <div class="cta-card" id="cta-demo">
+                <div class="card-glow"></div>
+                <div class="card-icon">🔍</div>
+                <h2>Watch Sandbox Demo</h2>
+                <p>Observe the detection pipeline catch threats in real time. Simulate human copy-pasters, AI agents, and scripted bots.</p>
+                <span class="cta-btn-label">Open Sandbox 👉</span>
+            </div>
+        </div>
+
+        <footer class="app-footer">
+            <p>Project Verified-Human • Phase 1 Zero-Dependency Security Protocol</p>
+        </footer>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 📝 VIEW 2: MANUAL SCREENING FORM SCREEN    -->
+    <!-- ========================================== -->
+    <section id="screen-form" class="view-screen hidden">
+        <header class="view-header">
+            <button class="btn-back" id="btn-form-back">⬅ Back to Home</button>
+            <div class="header-titles">
+                <h1>Legitimate Screening Portal</h1>
+                <p>Please select a questionnaire below and fill out your response.</p>
+            </div>
+        </header>
+
+        <!-- Form Category Switcher Tabs -->
+        <div class="form-tabs-container">
+            <button class="tab-btn active" data-form="developer">🛠️ Developer Screening</button>
+            <button class="tab-btn" data-form="speaker">🔊 Wireless Speaker Review</button>
+            <button class="tab-btn" data-form="habits">📱 Screen Time Survey</button>
+        </div>
+
+        <div class="form-content-container">
+            <form id="manual-screening-form" onsubmit="return false;">
+                <div class="input-group">
+                    <label for="manual-name">Full Name</label>
+                    <input type="text" id="manual-name" placeholder="Enter your name..." required autocomplete="off">
+                </div>
+                
+                <div class="input-group">
+                    <label id="lbl-manual-exp">Professional Background</label>
+                    <span class="question-prompt" id="prompt-manual-exp">Describe your recent experience with modern web development.</span>
+                    <textarea id="manual-experience" rows="3" placeholder="Type your experience details naturally..." required autocomplete="off"></textarea>
+                </div>
+
+                <div class="input-group">
+                    <label id="lbl-manual-trap">Technical Question</label>
+                    <span class="question-prompt" id="prompt-manual-trap">Explain how you would troubleshoot and fix "CSS memory leaks" in a large production stylesheet.</span>
+                    <textarea id="manual-trap" rows="5" placeholder="Type your technical response here..." required autocomplete="off"></textarea>
+                </div>
+
+                <button type="button" class="btn-primary" id="btn-manual-submit">
+                    <span>Submit Verification Form</span> 🛡️
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 🔍 VIEW 3: TELEMETRY SANDBOX DEMO SCREEN   -->
+    <!-- ========================================== -->
+    <section id="screen-demo" class="view-screen hidden">
+        <header class="view-header">
+            <button class="btn-back" id="btn-demo-back">⬅ Back to Home</button>
+            <div class="header-titles">
+                <h1>Security Sandbox Demo</h1>
+                <p>Load preset loadout profiles to watch the pipeline evaluate specific bot or AI threats.</p>
+            </div>
+        </header>
+
+        <!-- Sandbox Demo Loadouts -->
+        <div class="demo-profile-panel">
+            <span class="panel-label">1. SELECT TARGET THREAT PROFILE:</span>
+            <div class="profile-buttons">
+                <button class="profile-btn" id="btn-load-copypaste" data-profile="copypaste">
+                    <span class="icon">📋</span> Human Copy-Paster
+                </button>
+                <button class="profile-btn" id="btn-load-agent" data-profile="agent">
+                    <span class="icon">🧠</span> LLM Agent
+                </button>
+                <button class="profile-btn" id="btn-load-bot" data-profile="bot">
+                    <span class="icon">⚡</span> Scripted Bot
+                </button>
+            </div>
+        </div>
+
+        <!-- Form Category Switcher Tabs for Demo -->
+        <div class="form-tabs-container demo-tabs">
+            <button class="tab-btn active" data-form="developer">🛠️ Developer Onboarding</button>
+            <button class="tab-btn" data-form="speaker">🔊 Speaker E-Comm Review</button>
+            <button class="tab-btn" data-form="habits">📱 App Habits Survey</button>
+        </div>
+
+        <!-- Sandbox Dashboard Workspace -->
+        <div class="content-grid">
+            <!-- Left Sandbox Column: Telemetry Form -->
+            <div class="panel form-panel">
+                <div class="panel-header">
+                    <h2>Screening Visualizer Form</h2>
+                    <span class="status-indicator live" id="live-indicator">AWAITING PROFILE</span>
+                </div>
+
+                <div class="demo-trigger-area">
+                    <button class="btn-demo-trigger" id="btn-start-demo" disabled>
+                        <span>🎬 START AUTOMATED TYPING DEMO</span>
+                    </button>
+                    <div class="typing-status-msg" id="typing-status-msg">Select a threat profile above to begin.</div>
+                </div>
+
+                <form id="sandbox-form" onsubmit="return false;">
+                    <div class="input-group">
+                        <label for="demo-name">Full Name</label>
+                        <input type="text" id="demo-name" disabled autocomplete="off">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label id="lbl-demo-exp">Professional Background</label>
+                        <span class="question-prompt" id="prompt-demo-exp">Describe your experience...</span>
+                        <textarea id="demo-experience" rows="3" disabled autocomplete="off"></textarea>
+                    </div>
+
+                    <div class="input-group">
+                        <label id="lbl-demo-trap">Technical Question</label>
+                        <span class="question-prompt" id="prompt-demo-trap">Explain how...</span>
+                        <textarea id="demo-trap" rows="4" disabled autocomplete="off"></textarea>
+                    </div>
+
+                    <div class="submit-area-relative">
+                        <!-- Helper Arrow pointing to submit -->
+                        <div class="glow-pointer-arrow hidden" id="pointer-arrow">
+                            <span class="arrow-text">👇 Click Evaluate to Run Pipeline!</span>
+                            <div class="arrow-bounce"></div>
+                        </div>
+
+                        <button type="button" class="btn-primary" id="btn-demo-submit" disabled>
+                            <span>Evaluate Screening Submission</span> 🛡️
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Live Instrument Monitor Panel -->
+                <div class="telemetry-box">
+                    <h3>📟 Telemetry Event Instrumentation</h3>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-card">
+                            <span class="label">Time Taken</span>
+                            <span class="value mono" id="val-time">0.0s</span>
+                        </div>
+                        <div class="telemetry-card">
+                            <span class="label">Keystroke Cadence Variance</span>
+                            <span class="value mono" id="val-variance">0.00ms</span>
+                        </div>
+                        <div class="telemetry-card">
+                            <span class="label">Paste Detected</span>
+                            <span class="value" id="val-paste">False</span>
+                        </div>
+                        <div class="telemetry-card">
+                            <span class="label">Form Tab Switches</span>
+                            <span class="value mono" id="val-switches">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Sandbox Column: Dynamic Scorecard -->
+            <div class="panel report-panel">
+                <div class="panel-header">
+                    <h2>Legitimacy & Risk Assessment</h2>
+                    <span class="badge" id="report-status-badge">AWAITING SUBMISSION</span>
+                </div>
+                
+                <div class="report-content" id="report-empty">
+                    <div class="empty-state">
+                        <div class="radar-anim"></div>
+                        <p>Load a target threat profile, click <strong>Start Automated Typing Demo</strong>, and once filled, click <strong>Evaluate Screening Submission</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="report-content hidden" id="report-results">
+                    <!-- Gauge and Core Routing Card -->
+                    <div class="score-summary-card">
+                        <div class="gauge-area">
+                            <svg class="progress-ring" width="160" height="160">
+                                <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="12" fill="transparent" r="68" cx="80" cy="80"/>
+                                <circle class="progress-ring__circle" id="score-ring" stroke="#48bb78" stroke-width="12" fill="transparent" r="68" cx="80" cy="80"/>
+                            </svg>
+                            <div class="gauge-overlay">
+                                <span class="score-number" id="lbl-score">0</span>
+                                <span class="score-label">RISK pts</span>
+                            </div>
+                        </div>
+
+                        <div class="routing-details">
+                            <span class="status-label">Pipeline Status:</span>
+                            <div class="status-title" id="lbl-status">APPROVED</div>
+                            <p class="status-desc" id="lbl-status-desc">Legitimate Human Case.</p>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Accordion Breakdowns -->
+                    <div class="rules-breakdown">
+                        <h3>Detailed Rule Breakdown</h3>
+                        
+                        <!-- Tier 1 -->
+                        <div class="tier-section">
+                            <div class="tier-header">
+                                <span class="tier-title">Tier 1: Behavioral Heuristics</span>
+                                <span class="tier-score mono" id="lbl-t1-score">0 pts</span>
+                            </div>
+                            <div class="tier-rules-list" id="lbl-t1-rules"></div>
+                        </div>
+
+                        <!-- Tier 2 -->
+                        <div class="tier-section">
+                            <div class="tier-header">
+                                <span class="tier-title">Tier 2: Semantic Agent</span>
+                                <span class="tier-score mono" id="lbl-t2-score">0 pts</span>
+                            </div>
+                            <div class="tier-rules-list" id="lbl-t2-rules"></div>
+                        </div>
+
+                        <!-- Tier 3 -->
+                        <div class="tier-section">
+                            <div class="tier-header">
+                                <span class="tier-title">Tier 3: Footprint Integrity</span>
+                                <span class="tier-score mono" id="lbl-t3-score">0 pts</span>
+                            </div>
+                            <div class="tier-rules-list" id="lbl-t3-rules"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 🪟 FLOATING GLASSMORPHIC MODAL DIALOG       -->
+    <!-- ========================================== -->
+    <div class="modal-overlay hidden" id="modal-container">
+        <div class="modal-card">
+            <button class="btn-close-modal" id="btn-close-modal">×</button>
+            
+            <div class="modal-header">
+                <h2>🛡️ Screening Assessment Report</h2>
+                <span class="badge" id="modal-status-badge">APPROVED</span>
+            </div>
+
+            <!-- Gauge and Core Routing Card -->
+            <div class="score-summary-card">
+                <div class="gauge-area">
+                    <svg class="progress-ring" width="140" height="140">
+                        <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="10" fill="transparent" r="58" cx="70" cy="70"/>
+                        <circle class="progress-ring__circle" id="modal-score-ring" stroke="#48bb78" stroke-width="10" fill="transparent" r="58" cx="70" cy="70"/>
+                    </svg>
+                    <div class="gauge-overlay">
+                        <span class="score-number" id="lbl-modal-score" style="font-size: 2rem;">0</span>
+                        <span class="score-label" style="font-size: 0.55rem;">RISK pts</span>
+                    </div>
+                </div>
+
+                <div class="routing-details">
+                    <span class="status-label">Pipeline Status:</span>
+                    <div class="status-title" id="lbl-modal-status" style="font-size: 1.4rem;">APPROVED</div>
+                    <p class="status-desc" id="lbl-modal-status-desc">The submission meets all criteria.</p>
+                </div>
+            </div>
+
+            <div class="modal-telemetry-pill">
+                <span>⏱️ Time: <strong id="lbl-modal-time">0s</strong></span>
+                <span>🔤 Variance: <strong id="lbl-modal-variance">0ms</strong></span>
+                <span>📋 Paste: <strong id="lbl-modal-paste">False</strong></span>
+                <span>🔲 Tabs: <strong id="lbl-modal-switches">0</strong></span>
+            </div>
+
+            <!-- Rules checklist in modal -->
+            <div class="modal-rules-container">
+                <div class="rules-breakdown">
+                    <div class="tier-section">
+                        <div class="tier-header">
+                            <span class="tier-title">Tier 1: Behavioral Heuristics</span>
+                            <span class="tier-score mono" id="lbl-modal-t1-score">0 pts</span>
+                        </div>
+                        <div class="tier-rules-list" id="lbl-modal-t1-rules"></div>
+                    </div>
+                    <div class="tier-section">
+                        <div class="tier-header">
+                            <span class="tier-title">Tier 2: Semantic Agent</span>
+                            <span class="tier-score mono" id="lbl-modal-t2-score">0 pts</span>
+                        </div>
+                        <div class="tier-rules-list" id="lbl-modal-t2-rules"></div>
+                    </div>
+                    <div class="tier-section">
+                        <div class="tier-header">
+                            <span class="tier-title">Tier 3: Footprint Integrity</span>
+                            <span class="tier-score mono" id="lbl-modal-t3-score">0 pts</span>
+                        </div>
+                        <div class="tier-rules-list" id="lbl-modal-t3-rules"></div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn-primary" id="btn-modal-close" style="width: 100%; margin-top: 1.5rem;">
+                Close and Finish
+            </button>
+        </div>
+    </div>
+
+    <!-- JS Logic Core -->
+    <script src="app.js"></script>
+</body>
+</html>

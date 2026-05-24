@@ -1,0 +1,66 @@
+[
+  {
+    "participant_id": "legit_human",
+    "name": "Alex Mercer",
+    "time_taken_seconds": 125,
+    "typing_cadence_variance_ms": 48.5,
+    "paste_detected": false,
+    "tab_switches_during_form": 0,
+    "trap_question_response": "I think there is a misunderstanding in this question. CSS is a stylesheet language and runs entirely in the browser layout engine. There is no such thing as a 'CSS memory leak' in the sense of memory allocation in code execution; memory leaks typically occur in JavaScript when DOM elements are referenced but not garbage collected. CSS styles themselves do not leak memory.",
+    "other_responses": [
+      "I have 5 years of frontend development experience working with React and standard CSS/SCSS.",
+      "I am interested in participating because I want to help improve web accessibility standards."
+    ],
+    "github_account_age_days": 1200,
+    "github_public_repos": 34,
+    "github_followers": 89
+  },
+  {
+    "participant_id": "script_bot",
+    "name": "Botty McBotface",
+    "time_taken_seconds": 8,
+    "typing_cadence_variance_ms": 1.2,
+    "paste_detected": true,
+    "tab_switches_during_form": 0,
+    "trap_question_response": "To fix CSS memory leaks, we should optimize our selectors and ensure we remove unused classes. We can also use chrome devtools to inspect heap snapshots and see where styles are hogging memory. Implementing CSS modules also prevents leaks.",
+    "other_responses": [
+      "I am a software engineer.",
+      "I want to join the research panel."
+    ],
+    "github_account_age_days": 5,
+    "github_public_repos": 0,
+    "github_followers": 0
+  },
+  {
+    "participant_id": "llm_scammer",
+    "name": "Jane AI-Scammer",
+    "time_taken_seconds": 55,
+    "typing_cadence_variance_ms": 22.4,
+    "paste_detected": true,
+    "tab_switches_during_form": 7,
+    "trap_question_response": "First and foremost, it is crucial to note that CSS memory leaks can severely degrade web application performance. To resolve this issue: \n- First, analyze selector complexity.\n- Second, minimize the use of heavy dynamic properties like filters.\n- Third, clean up dynamic class injections.\nIn conclusion, addressing CSS memory leaks is vital for a smooth user experience.",
+    "other_responses": [
+      "I have extensive expertise in modern fullstack web architectures.",
+      "My primary goal is to contribute my specialized skills to this study."
+    ],
+    "github_account_age_days": 45,
+    "github_public_repos": 0,
+    "github_followers": 0
+  },
+  {
+    "participant_id": "borderline_user",
+    "name": "Jordan Smith",
+    "time_taken_seconds": 38,
+    "typing_cadence_variance_ms": 15.1,
+    "paste_detected": false,
+    "tab_switches_during_form": 5,
+    "trap_question_response": "Wait, I don't think CSS files themselves have memory leaks. Memory leaks occur in JS logic or browser rendering bugs. You can't leak memory in CSS rules.",
+    "other_responses": [
+      "I am a junior web designer.",
+      "I am looking for extra income and research experience."
+    ],
+    "github_account_age_days": 15,
+    "github_public_repos": 2,
+    "github_followers": 1
+  }
+]
