@@ -295,9 +295,9 @@ function executePipelineScore(metrics, inputs, category) {
     // Cryptographic Telemetry Payload signature verification
     if (metrics.tamperedSignature) {
         t1Score += 50;
-        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 50, details: `❌ CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery).` });
+        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 50, details: `CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery).` });
     } else if (metrics.signature) {
-        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 0, details: `🟢 VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge (${sessionChallenge}).` });
+        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 0, details: `VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge (${sessionChallenge}).` });
     }
 
     // Advanced Focus-Paste Coincidence Correlative Check
@@ -903,7 +903,7 @@ function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
         if (trig) {
             item.innerHTML = `
                 <div class="rule-meta triggered">
-                    <span class="rule-name">⚠️ ${name}</span>
+                    <span class="rule-name">[FLAGGED] ${name}</span>
                     <span class="rule-badge">+${trig.points} pts</span>
                 </div>
                 <div class="rule-details">${trig.details}</div>
@@ -911,7 +911,7 @@ function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
         } else {
             item.innerHTML = `
                 <div class="rule-meta clean">
-                    <span class="rule-name">✔ ${name}</span>
+                    <span class="rule-name">[PASS] ${name}</span>
                     <span class="rule-badge">0 pts</span>
                 </div>
             `;

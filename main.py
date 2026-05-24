@@ -92,27 +92,27 @@ def display_risk_report(report: Dict[str, Any], payload: Dict[str, Any]) -> None
     t1 = breakdown["tier1"]
     print(f"\n  {CLR_BOLD}Tier 1: Behavioral Dynamics{CLR_RESET} (Subtotal: {t1['score']} pts)")
     if not t1["triggered_rules"]:
-        print(f"    {CLR_DIM}✔ No suspicious behavioral dynamic triggers detected.{CLR_RESET}")
+        print(f"    {CLR_DIM}[PASS] No suspicious behavioral dynamic triggers detected.{CLR_RESET}")
     for rule in t1["triggered_rules"]:
-        print(f"    {CLR_RED}⚠ [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
+        print(f"    {CLR_RED}[FLAGGED] [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
         print(f"      {CLR_DIM}{rule['details']}{CLR_RESET}")
 
     # Tier 2
     t2 = breakdown["tier2"]
     print(f"\n  {CLR_BOLD}Tier 2: Semantic Analysis{CLR_RESET} (Subtotal: {t2['score']} pts)")
     if not t2["triggered_rules"]:
-        print(f"    {CLR_DIM}✔ No semantic/perplexity anomalies triggered.{CLR_RESET}")
+        print(f"    {CLR_DIM}[PASS] No semantic/perplexity anomalies triggered.{CLR_RESET}")
     for rule in t2["triggered_rules"]:
-        print(f"    {CLR_RED}⚠ [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
+        print(f"    {CLR_RED}[FLAGGED] [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
         print(f"      {CLR_DIM}{rule['details']}{CLR_RESET}")
 
     # Tier 3
     t3 = breakdown["tier3"]
     print(f"\n  {CLR_BOLD}Tier 3: Footprint Integrity{CLR_RESET} (Subtotal: {t3['score']} pts)")
     if not t3["triggered_rules"]:
-        print(f"    {CLR_DIM}✔ OSINT footprint verification clean.{CLR_RESET}")
+        print(f"    {CLR_DIM}[PASS] OSINT footprint verification clean.{CLR_RESET}")
     for rule in t3["triggered_rules"]:
-        print(f"    {CLR_RED}⚠ [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
+        print(f"    {CLR_RED}[FLAGGED] [{rule['rule_name']}] +{rule['points']} pts{CLR_RESET}")
         print(f"      {CLR_DIM}{rule['details']}{CLR_RESET}")
 
     # 4. Answers preview
@@ -161,9 +161,9 @@ def run_automated_tests(participants: List[Dict[str, Any]]) -> bool:
     print(f"{CLR_DIM}└{'─'*30}┴{'─'*22}┴{'─'*22}┴{'─'*11}┘{CLR_RESET}")
 
     if all_passed:
-        print(f"\n{CLR_GREEN}✔ All integration test cases successfully passed.{CLR_RESET}\n")
+        print(f"\n{CLR_GREEN}[PASS] All integration test cases successfully passed.{CLR_RESET}\n")
     else:
-        print(f"\n{CLR_RED}❌ Test failure detected! Some outputs deviated from expectation.{CLR_RESET}\n")
+        print(f"\n{CLR_RED}[FAIL] Test failure detected! Some outputs deviated from expectation.{CLR_RESET}\n")
         
     return all_passed
 

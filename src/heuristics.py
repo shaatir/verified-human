@@ -91,13 +91,13 @@ def evaluate_tier1_behavioral(payload: Dict[str, Any]) -> Tuple[int, List[Dict[s
         triggered.append({
             "rule_name": "Cryptographic Payload Validation Check",
             "points": rule_points,
-            "details": "❌ CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery)."
+            "details": "CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery)."
         })
     elif signature:
         triggered.append({
             "rule_name": "Cryptographic Payload Validation Check",
             "points": 0,
-            "details": "🟢 VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge."
+            "details": "VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge."
         })
 
     return points, triggered
