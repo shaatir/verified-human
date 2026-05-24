@@ -1,7 +1,6 @@
 # 🛡️ Verified-Human
 ### Advanced Behavioral & Semantic Screening Pipeline for Participant Recruitment
 
-> **A Lightweight Demo Built for Great Question's AI Engineering Internship**  
 > Designed to solve a critical trust-and-safety problem in automated participant recruitment: **catching LLM-powered survey scammers, automated sybils, and scripted bots in real time.**
 
 ---
@@ -144,14 +143,4 @@ This starts the built-in local server. Open your web browser and navigate to:
 
 ---
 
-## ⚡ Alignment with YC Work At A Startup Requirements
-
-As listed in the [Great Question AI Intern role spec](https://www.workatastartup.com/jobs/95187), this demo directly showcases key engineering and product competencies:
-*   **MCP Tool Structuring & Evals**: Demonstrates a clean, modular evaluation framework built specifically to evaluate prompt engineering and AI agent boundaries.
-*   **Zero Dependencies**: Proves high-agency capability by building custom mathematical variance trackers and socket routers without bloated libraries.
-*   **Product Intuition**: Shows deep empathy for the customer research experience by hiding telemetries from legitimate survey takers while exposing them in high-fidelity developer dashboards.
-*   **Clear Communication**: Clear documentation showing how the code was built, why design decisions were made, and how to verify results.
-
----
-
-*Built with passion by Ruchir Joshi for the Great Question AI Engineering Intern Team.*
+*Built with passion by Ruchir Joshi.*
