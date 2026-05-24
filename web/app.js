@@ -690,6 +690,9 @@ function runTypingSimulation(profileType, category) {
     const texts = config.texts[profileType];
     const telemetry = demoLoadoutConfigs[profileType].telemetry;
 
+    // Hide pointer arrow during active simulation typing/pasting
+    pointerArrow.classList.add('hidden');
+
     // Visual indicators
     liveIndicator.textContent = "SIMULATION RUNNING";
     liveIndicator.style.background = "hsla(38, 92%, 50%, 0.1)";
