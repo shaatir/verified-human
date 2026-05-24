@@ -595,39 +595,6 @@ input:disabled, textarea:disabled {
     width: 100%;
 }
 
-.glow-pointer-arrow {
-    position: absolute;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--color-primary);
-    color: #ffffff;
-    padding: 0.6rem 1.25rem;
-    border-radius: var(--radius-lg);
-    font-weight: 700;
-    font-size: 0.85rem;
-    box-shadow: 0 10px 20px rgba(88, 80, 236, 0.25);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.15rem;
-    z-index: 100;
-    animation: arrow-bounce 1.5s infinite ease-in-out;
-    pointer-events: none;
-    white-space: nowrap;
-}
-
-.glow-pointer-arrow::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border-width: 6px;
-    border-style: solid;
-    border-color: var(--color-primary) transparent transparent transparent;
-}
-
 /* Primary buttons (Signature Brand Color) */
 .btn-primary {
     background-color: #238636;
@@ -899,27 +866,71 @@ input:disabled, textarea:disabled {
     gap: 0.4rem;
 }
 
-.rule-row {
+.rule-item {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    background: #1c2128;
+    border: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    transition: var(--transition);
+}
+.rule-item:last-child {
+    margin-bottom: 0;
+}
+
+.rule-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 0.85rem;
-    padding: 0.2rem 0;
-}
-
-.rule-row.triggered {
-    color: var(--color-rejected);
     font-weight: 600;
 }
 
-.rule-row.clean {
-    color: var(--color-approved);
+.rule-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--text-dark);
 }
 
-.rule-row .points {
+.rule-badge {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 50px;
+    transition: var(--transition);
 }
+
+.rule-meta.clean .rule-badge {
+    background: #0d1117;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+.rule-meta.triggered .rule-badge {
+    background: rgba(248, 81, 73, 0.1);
+    color: var(--color-rejected);
+    border: 1px solid rgba(248, 81, 73, 0.2);
+}
+
+.rule-meta.triggered.warning .rule-badge {
+    background: rgba(210, 153, 34, 0.1);
+    color: var(--color-flagged);
+    border: 1px solid rgba(210, 153, 34, 0.2);
+}
+
+.rule-details {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding-left: 1.5rem;
+    line-height: 1.4;
+}
+
 
 /* --- Floating modal assessment Report Screen --- */
 .modal-overlay {
@@ -1071,14 +1082,7 @@ input:disabled, textarea:disabled {
     }
 }
 
-@keyframes arrow-bounce {
-    0%, 100% {
-        transform: translate(-50%, 0);
-    }
-    50% {
-        transform: translate(-50%, 8px);
-    }
-}
+
 
 @keyframes modal-slideup {
     from {

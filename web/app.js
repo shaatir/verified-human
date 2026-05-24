@@ -575,7 +575,6 @@ const demoTrapText = document.getElementById('demo-trap');
 const btnStartDemo = document.getElementById('btn-start-demo');
 const btnDemoSubmit = document.getElementById('btn-demo-submit');
 const typingStatusMsg = document.getElementById('typing-status-msg');
-const pointerArrow = document.getElementById('pointer-arrow');
 const flashOverlay = document.getElementById('focus-flash-overlay');
 
 const reportEmpty = document.getElementById('report-empty');
@@ -600,7 +599,6 @@ function resetDemoSandbox() {
     selectedDemoProfile = null;
     btnStartDemo.disabled = true;
     btnDemoSubmit.disabled = true;
-    pointerArrow.classList.add('hidden');
     
     demoNameInput.value = "";
     demoExpText.value = "";
@@ -689,9 +687,6 @@ function runTypingSimulation(profileType, category) {
     if (!config) return;
     const texts = config.texts[profileType];
     const telemetry = demoLoadoutConfigs[profileType].telemetry;
-
-    // Hide pointer arrow during active simulation typing/pasting
-    pointerArrow.classList.add('hidden');
 
     // Visual indicators
     liveIndicator.textContent = "SIMULATION RUNNING";
@@ -808,9 +803,6 @@ function finishSimulation(profileType) {
     liveIndicator.style.color = "var(--color-approved)";
     
     btnDemoSubmit.disabled = false;
-    
-    // Reveal pointer arrow pointing to submit button
-    pointerArrow.classList.remove('hidden');
 }
 
 // Bind Start Demo Action click
@@ -857,9 +849,6 @@ btnDemoSubmit.addEventListener('click', async () => {
     // Render live signature values in telemetry board
     document.getElementById('val-signature').textContent = signatureHex.substring(0, 32) + "...";
 
-    // Hide helper arrow
-    pointerArrow.classList.add('hidden');
-
     // Render Sandbox Report Panel
     reportEmpty.classList.add('hidden');
     reportResults.classList.remove('hidden');
@@ -901,10 +890,11 @@ function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
         item.className = "rule-item";
         
         if (trig) {
+            const isWarning = trig.points <= 25;
             item.innerHTML = `
-                <div class="rule-meta triggered">
+                <div class="rule-meta triggered ${isWarning ? 'warning' : ''}">
                     <span class="rule-name">
-                        <svg class="octicon octicon-alert-fill" viewBox="0 0 16 16" version="1.1" width="14" height="14" aria-hidden="true" fill="var(--color-rejected)" style="vertical-align: text-bottom; margin-right: 6px;">
+                        <svg class="octicon octicon-alert-fill" viewBox="0 0 16 16" version="1.1" width="14" height="14" aria-hidden="true" fill="${isWarning ? 'var(--color-flagged)' : 'var(--color-rejected)'}" style="vertical-align: text-bottom; margin-right: 6px;">
                             <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575L6.457 1.047zM9 11a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0v-2.5z"></path>
                         </svg>
                         ${name}
