@@ -903,7 +903,12 @@ function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
         if (trig) {
             item.innerHTML = `
                 <div class="rule-meta triggered">
-                    <span class="rule-name">[FLAGGED] ${name}</span>
+                    <span class="rule-name">
+                        <svg class="octicon octicon-alert-fill" viewBox="0 0 16 16" version="1.1" width="14" height="14" aria-hidden="true" fill="var(--color-rejected)" style="vertical-align: text-bottom; margin-right: 6px;">
+                            <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575L6.457 1.047zM9 11a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0v-2.5z"></path>
+                        </svg>
+                        ${name}
+                    </span>
                     <span class="rule-badge">+${trig.points} pts</span>
                 </div>
                 <div class="rule-details">${trig.details}</div>
@@ -911,7 +916,12 @@ function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
         } else {
             item.innerHTML = `
                 <div class="rule-meta clean">
-                    <span class="rule-name">[PASS] ${name}</span>
+                    <span class="rule-name">
+                        <svg class="octicon octicon-check-circle-fill" viewBox="0 0 16 16" version="1.1" width="14" height="14" aria-hidden="true" fill="var(--color-approved)" style="vertical-align: text-bottom; margin-right: 6px;">
+                            <path d="M8 16A8 8 0 118 0a8 8 0 010 16zm3.78-9.72a.75.75 0 00-1.06-1.06L6.75 9.19 5.28 7.72a.75.75 0 00-1.06 1.06l2 2a.75.75 0 001.06 0l4.5-4.5z"></path>
+                        </svg>
+                        ${name}
+                    </span>
                     <span class="rule-badge">0 pts</span>
                 </div>
             `;
