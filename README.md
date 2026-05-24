@@ -14,13 +14,6 @@ When platforms offer rewards or incentives for user feedback, they become prime 
 
 ---
 
-## 🎨 Premium Great Question Brand-Matched UI
-
-To demonstrate direct engagement with Great Question’s product and branding craft, the interactive web visualizer has been custom-styled to match **Great Question’s AI Features aesthetic** exactly:
-*   **Color Scheme**: Clean light-SaaS theme featuring the signature indigo (`#5850EC`), soft lavender borders (`#EAEAFD`), and high-contrast slate text.
-*   **Typography**: Implements **Inter** for crisp UI buttons/gauges, and **Source Serif 4** for large titles and question prompts to deliver a premium editorial feel.
-*   **Glassmorphic Design**: The manual submission modal utilizes premium blurred overlays (`backdrop-filter: blur(12px)`) with elegant SVG scoring progress rings and clean telemetry checklists.
-
 ---
 
 ## ⚙️ The Three-Tier Defense Pipeline
