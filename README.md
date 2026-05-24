@@ -72,8 +72,8 @@ verified-human/
 │   └── pipeline.py              # Risk Aggregator, Clamping, and Router
 │
 ├── web/
-│   ├── index.html               # Multi-screen light-theme dashboard structure
-│   ├── styles.css               # Clean GQ brand design styles & animations
+│   ├── index.html               # Multi-screen GitHub-style dark dashboard structure
+│   ├── styles.css               # Clean GitHub Dark Theme design styles & animations
 │   └── app.js                   # Client-side typing simulation & telemetry trackers
 │
 ├── main.py                      # Interactive CLI terminal interface & test suite
@@ -125,7 +125,7 @@ python3 main.py
 ---
 
 ### 🌐 Step 4: Launch the Interactive Web Dashboard
-To launch the beautiful, Great Question brand-matched three-screen interactive dashboard, run the local server utility:
+To launch the beautiful, GitHub Dark Theme matched three-screen interactive dashboard, run the local server utility:
 ```bash
 python3 server.py
 ```
@@ -139,7 +139,7 @@ This starts the built-in local server. Open your web browser and navigate to:
 2.  **Sandbox Demo (Path B)**: Click *"Watch Sandbox Demo"*. Select a target threat loadout profile from the top panel:
     *   **LLM Agent**: Watch the typing simulator paste large blocks of text, type at typical human pace, and trigger **yellow attention flashes** when it switches tabs to simulate fetching an answer from ChatGPT.
     *   **Scripted Bot**: Watch it fill out the form instantly with robotic, zero-variance rhythm.
-    *   **Evaluate**: Click the glowing, bouncing brand-indigo pointer arrow to evaluate the submission and render the visual assessment report!
+    *   **Evaluate**: Click the glowing, bouncing primary-blue pointer arrow to evaluate the submission and render the visual assessment report!
 
 ---
 
