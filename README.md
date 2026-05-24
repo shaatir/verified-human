@@ -93,31 +93,61 @@ verified-human/
 
 ## 🚀 Installation & Launch Guide
 
-### Prerequisites
-*   Python 3.11+ (No pip installs required—zero external library dependencies!)
-*   A modern web browser (Chrome/Safari/Firefox).
+Follow these quick, step-by-step instructions to clone, set up, and run **Verified-Human** locally on your machine:
 
-### 1. Run the Automated Compliance Test Suite
-To verify the semantic pipeline scoring accuracy, execute the terminal integration test:
-```bash
-python3 verified-human/main.py --test
-```
-This runs four distinct mock profile vectors through the multi-tier grading matrix and prints the routing decision output.
+### ⚙️ Prerequisites
+*   **Python 3.11+** installed (verify via `python3 --version`).
+*   **Git** installed (verify via `git --version`).
+*   **Zero External Dependencies**: This project operates 100% on the standard Python and Web library APIs. There is **no need** to run `pip install`, `npm install`, or configure virtual environments!
 
-### 2. Launch the Interactive Web Dashboard
-Run the built-in HTTP server:
+---
+
+### 📥 Step 1: Clone the Repository
+Open your terminal and execute the following command to clone the project:
 ```bash
-python3 verified-human/server.py
+git clone https://github.com/shaatir/verified-human.git
 ```
-This starts hosting the dashboard locally. Open your browser and navigate to:
+
+Navigate directly into the cloned repository folder:
+```bash
+cd verified-human
+```
+
+---
+
+### 🧪 Step 2: Run the Automated Compliance Test Suite
+To verify that the multi-tier heuristics engine, semantic evaluations, and scoring matrices are fully operational, run the automated test suite:
+```bash
+python3 main.py --test
+```
+This grades four distinct mock profiles (a Legitimate Human, a Scripted Bot, an LLM Scammer, and a Borderline User) and prints a tabular compliance report to your terminal console.
+
+---
+
+### 📟 Step 3: Interact with the Pipeline via Terminal (Optional)
+If you want to manually run submissions and see the semantic parser run inline within the CLI, execute the interactive terminal runner:
+```bash
+python3 main.py
+```
+
+---
+
+### 🌐 Step 4: Launch the Interactive Web Dashboard
+To launch the beautiful, Great Question brand-matched three-screen interactive dashboard, run the local server utility:
+```bash
+python3 server.py
+```
+This starts the built-in local server. Open your web browser and navigate to:
 👉 **[http://localhost:8000](http://localhost:8000)**
 
+---
+
 ### 🎥 How to Demo the Web Interface:
-1.  **Manual Test (Path A)**: Click *"Fill in a Form"*. Select a questionnaire tab and try typing a regular answer. Watch the modal display **your actual** cadence variance, tab switches, and paste telemetry in real time!
-2.  **Sandbox Demo (Path B)**: Click *"Watch Sandbox Demo"*. Load a preset threat:
-    *   **LLM Agent**: Watch the typing simulator automatically paste text, type with clean cadence, and trigger a **focus-switch yellow screen flash** to simulate switching tabs to generate an LLM response.
-    *   **Scripted Bot**: Watch it fill out the form instantly and with robotic cadence.
-    *   **Evaluate**: Click the bouncing brand-indigo pointer arrow to execute the scoring report and watch the SVG circular gauge dynamically colorize!
+1.  **Manual Test (Path A)**: Click *"Fill in a Form"*. Select a questionnaire tab and try typing a response. Submit it to fade in the blurred glass modal displaying **your actual** keystroke cadence variance, tab switches, and paste events calculated in real time!
+2.  **Sandbox Demo (Path B)**: Click *"Watch Sandbox Demo"*. Select a target threat loadout profile from the top panel:
+    *   **LLM Agent**: Watch the typing simulator paste large blocks of text, type at typical human pace, and trigger **yellow attention flashes** when it switches tabs to simulate fetching an answer from ChatGPT.
+    *   **Scripted Bot**: Watch it fill out the form instantly with robotic, zero-variance rhythm.
+    *   **Evaluate**: Click the glowing, bouncing brand-indigo pointer arrow to evaluate the submission and render the visual assessment report!
 
 ---
 
