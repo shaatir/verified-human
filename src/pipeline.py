@@ -28,7 +28,8 @@ def process_participant_screening(payload: Dict[str, Any]) -> Dict[str, Any]:
     t2_score = 0
 
     trap_res = payload.get("trap_question_response", "")
-    t2_trap_score, t2_trap_rule = evaluate_trap_question(trap_res)
+    category = payload.get("category", "developer")
+    t2_trap_score, t2_trap_rule = evaluate_trap_question(trap_res, category)
     if t2_trap_rule:
         t2_score += t2_trap_score
         t2_rules.append(t2_trap_rule)

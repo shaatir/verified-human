@@ -204,6 +204,10 @@
                             <span class="label">Form Tab Switches</span>
                             <span class="value mono" id="val-switches">0</span>
                         </div>
+                        <div class="telemetry-card" style="grid-column: span 2;">
+                            <span class="label">HMAC Telemetry Signature (SHA-256)</span>
+                            <span class="value mono" id="val-signature" style="font-size: 0.75rem; word-break: break-all; color: var(--color-primary);">AWAITING_INPUT</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -316,6 +320,10 @@
                 <span>🔤 Variance: <strong id="lbl-modal-variance">0ms</strong></span>
                 <span>📋 Paste: <strong id="lbl-modal-paste">False</strong></span>
                 <span>🔲 Tabs: <strong id="lbl-modal-switches">0</strong></span>
+            </div>
+            
+            <div id="lbl-modal-signature-wrapper" style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; font-size: 0.78rem; font-family: var(--font-mono); word-break: break-all; text-align: center; color: var(--text-muted); box-shadow: var(--shadow-sm);">
+                🔑 HMAC-SHA256: <strong id="lbl-modal-signature" style="color: var(--color-primary);">AWAITING_SIGNATURE</strong>
             </div>
 
             <!-- Rules checklist in modal -->

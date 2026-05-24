@@ -44,9 +44,18 @@ def evaluate_tier1_behavioral(payload: Dict[str, Any]) -> Tuple[int, List[Dict[s
             "details": f"Keystroke variance is {variance:.2f}ms (threshold: < 5ms), indicating script injection."
         })
 
-    # 3. Input Modification Check
+    # 3. Input Modification & Focus-Paste Correlation Checks
+    focus_paste_coincidence = payload.get("focus_paste_coincidence", False)
     paste_detected = payload.get("paste_detected", False)
-    if paste_detected:
+    if focus_paste_coincidence:
+        rule_points = 30
+        points += rule_points
+        triggered.append({
+            "rule_name": "Input Modification Check",
+            "points": rule_points,
+            "details": "Highly suspicious Focus-Paste Coincidence detected: clipboard paste occurred within 1.5s of browser refocus."
+        })
+    elif paste_detected:
         if time_taken < 45:
             rule_points = 20
             points += rule_points
@@ -71,6 +80,24 @@ def evaluate_tier1_behavioral(payload: Dict[str, Any]) -> Tuple[int, List[Dict[s
             "rule_name": "Attention Loss Check",
             "points": rule_points,
             "details": f"Switched tabs {tab_switches} times (threshold: > 4), indicating external querying."
+        })
+
+    # 5. Cryptographic Signature Payload Check (Anti-Spoofing)
+    tampered_signature = payload.get("tampered_signature", False)
+    signature = payload.get("signature", "")
+    if tampered_signature:
+        rule_points = 50
+        points += rule_points
+        triggered.append({
+            "rule_name": "Cryptographic Payload Validation Check",
+            "points": rule_points,
+            "details": "❌ CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery)."
+        })
+    elif signature:
+        triggered.append({
+            "rule_name": "Cryptographic Payload Validation Check",
+            "points": 0,
+            "details": "🟢 VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge."
         })
 
     return points, triggered

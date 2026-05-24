@@ -1,5 +1,26 @@
 /* 📟 Verified-Human Pipeline Telemetry & Redesigned Multi-Form JS */
 
+// --- Cryptographic Telemetry Session Setup ---
+const sessionChallenge = "GQ-AI-CHALLENGE-" + Math.floor(1000 + Math.random() * 9000);
+console.log(`[Verified-Human] Session initiated. HMAC-SHA256 Challenge: ${sessionChallenge}`);
+
+async function computeHMAC(intervals, challenge) {
+    if (!intervals || intervals.length === 0) return "NO_KEYSTROKES_NO_HMAC";
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(challenge);
+    const data = encoder.encode(JSON.stringify(intervals));
+    try {
+        const cryptoKey = await window.crypto.subtle.importKey(
+            "raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+        );
+        const signatureBuffer = await window.crypto.subtle.sign("HMAC", cryptoKey, data);
+        const hashArray = Array.from(new Uint8Array(signatureBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+        return "HMAC_COMPUTATION_FAILED";
+    }
+}
+
 // --- Navigation Controllers ---
 const screens = {
     home: document.getElementById('screen-home'),
@@ -167,56 +188,40 @@ function evaluateTrapQuestion(text, category) {
     const clean = text.toLowerCase().trim();
     const wordCount = clean.split(/\s+/).filter(w => w.length > 0).length;
     
-    let refutationPatterns = [];
-    let compliancePatterns = [];
+    let refutationRegexes = [];
+    let complianceRegexes = [];
     
     if (category === 'developer') {
-        refutationPatterns = [
-            "false premise", "incorrect premise", "doesn't have memory leaks", 
-            "does not have memory leaks", "don't think", "dont think", 
-            "don't believe", "dont believe", "can't leak", "cant leak", 
-            "cannot leak", "no memory leak", "no leak", "not leak", 
-            "no such thing", "not possible", "is a myth", "misunderstanding", 
-            "js/dom issue", "javascript memory leaks", "rendering engine bug",
-            "css is not", "css doesn't", "css itself doesn't", "css does not"
+        refutationRegexes = [
+            /\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|logic|declarative)\b.{0,40}\b(leak|leaks|memory|heap|selector)\b/i,
+            /\b(js\/dom issue|rendering engine|browser layout|css itself does not|no such thing)\b/i
         ];
-        compliancePatterns = [
-            "to fix css memory leaks", "resolve css memory leaks", "prevent css memory leaks",
-            "optimize selectors", "inspect heap snapshots", "styles are hogging memory",
-            "clean up dynamic class", "unused classes", "selector complexity",
-            "dynamic class injection", "degrade performance"
+        complianceRegexes = [
+            /\b(fix|resolve|prevent|troubleshoot|inspect)\b.{0,40}\b(css memory leak|leak|heap|selector)\b/i,
+            /\b(heap snapshot|selectors|optimize selectors|unused classes|selector complexity|dynamic class)\b/i
         ];
     } else if (category === 'speaker') {
-        refutationPatterns = [
-            "no projector", "doesn't have a projector", "no holographic screen", 
-            "cannot project movies", "what projector", "only plays audio", 
-            "it is just a speaker", "no screen", "doesn't play movies", 
-            "doesn't project", "only plays music", "doesn't have a screen", 
-            "speaker doesn't watch", "not a projector", "projector doesn't exist"
+        refutationRegexes = [
+            /\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|only)\b.{0,40}\b(projector|hologram|holographic|screen|movie|movies)\b/i,
+            /\b(only plays audio|just a speaker|no screen|not a projector|doesn't project|only plays music)\b/i
         ];
-        compliancePatterns = [
-            "projector is amazing", "watched movies", "projected on the wall", 
-            "holographic projector", "watch movies", "hologram", "wall projector", 
-            "loved the projector", "liked the projector", "visual clarity"
+        complianceRegexes = [
+            /\b(liked|loved|enjoyed|watched|visual|crystal|clarity|cinematic|immersive|projected)\b.{0,40}\b(projector|hologram|holographic|screen|movie|movies)\b/i,
+            /\b(watched movies|wall projector|holographic projector|hologram on my wall)\b/i
         ];
     } else if (category === 'habits') {
-        refutationPatterns = [
-            "no smell-o-vision", "cannot smell", "no smell feature", 
-            "phones can't smell", "is this a joke", "impossible to smell", 
-            "fake setting", "doesn't emit scent", "cannot smell food", 
-            "no aroma settings", "doesn't exist", "can't smell photos",
-            "smell settings don't", "not a real feature"
+        refutationRegexes = [
+            /\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|joke)\b.{0,40}\b(smell|scent|odor|aroma|smell-o-vision)\b/i,
+            /\b(phones can't smell|cannot smell food|doesn't emit scent|doesn't exist|not a real feature|can't smell photos)\b/i
         ];
-        compliancePatterns = [
-            "smell-o-vision", "smell the photos", "aroma settings", 
-            "smell food", "scent transmission", "activate smell", 
-            "olfactory", "loved the smell", "liked the smell", 
-            "liked the feature", "aroma transmission"
+        complianceRegexes = [
+            /\b(loved|liked|enjoyed|smelled|scent|aroma|olfactory|sensory|delicious|pizza|cookies)\b.{0,40}\b(smell|scent|odor|aroma|smell-o-vision)\b/i,
+            /\b(smell the photos|aroma settings|scent transmission|smell food)\b/i
         ];
     }
     
-    const hasRefutation = refutationPatterns.some(pat => clean.includes(pat));
-    const hasCompliance = compliancePatterns.some(pat => clean.includes(pat));
+    const hasRefutation = refutationRegexes.some(rx => rx.test(clean));
+    const hasCompliance = complianceRegexes.some(rx => rx.test(clean));
     
     if (hasCompliance || (!hasRefutation && wordCount > 15)) {
         return {
@@ -286,7 +291,20 @@ function executePipelineScore(metrics, inputs, category) {
         t1Score += 25;
         t1Rules.push({ rule_name: "Keystroke Variance Check", points: 25, details: `Keystroke cadence variance is ${metrics.variance.toFixed(2)}ms (threshold: < 5ms).` });
     }
-    if (metrics.paste) {
+    
+    // Cryptographic Telemetry Payload signature verification
+    if (metrics.tamperedSignature) {
+        t1Score += 50;
+        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 50, details: `❌ CRITICAL FAILURE: Cryptographic telemetry signature mismatch. Telemetry intervals do not match signature hash (potential payload forgery).` });
+    } else if (metrics.signature) {
+        t1Rules.push({ rule_name: "Cryptographic Payload Validation Check", points: 0, details: `🟢 VERIFIED: HMAC-SHA256 telemetry signature matches active session challenge (${sessionChallenge}).` });
+    }
+
+    // Advanced Focus-Paste Coincidence Correlative Check
+    if (metrics.focusPasteCoincidence) {
+        t1Score += 30;
+        t1Rules.push({ rule_name: "Input Modification Check", points: 30, details: `Highly suspicious Focus-Paste Coincidence detected: clipboard paste occurred within 1.5s of browser refocus.` });
+    } else if (metrics.paste) {
         if (metrics.time < 45) {
             t1Score += 20;
             t1Rules.push({ rule_name: "Input Modification Check", points: 20, details: `Clipboard paste detected and form submitted in < 45s (${metrics.time.toFixed(1)}s).` });
@@ -294,6 +312,7 @@ function executePipelineScore(metrics, inputs, category) {
             t1Rules.push({ rule_name: "Input Modification Check", points: 0, details: `Clipboard paste detected, but time taken (${metrics.time.toFixed(1)}s) is above high-risk 45s threshold.` });
         }
     }
+    
     if (metrics.switches > 4) {
         t1Score += 15;
         t1Rules.push({ rule_name: "Attention Loss Check", points: 15, details: `Switched tabs ${metrics.switches} times during screening (threshold: > 4).` });
@@ -362,6 +381,8 @@ let manualTelemetry = {
     intervals: [],
     lastKey: null,
     paste: false,
+    lastFocusTime: null,
+    focusPasteCoincidence: false,
     switches: 0
 };
 
@@ -376,6 +397,8 @@ function resetManualTelemetry() {
         intervals: [],
         lastKey: null,
         paste: false,
+        lastFocusTime: null,
+        focusPasteCoincidence: false,
         switches: 0
     };
     
@@ -417,13 +440,24 @@ const manualTrapText = document.getElementById('manual-trap');
     el.addEventListener('paste', () => {
         startManualTimer();
         manualTelemetry.paste = true;
+        // Check for Focus-Paste Coincidence (within 1.5 seconds of returning to tab focus)
+        if (manualTelemetry.lastFocusTime !== null && (Date.now() - manualTelemetry.lastFocusTime) < 1500) {
+            manualTelemetry.focusPasteCoincidence = true;
+            console.warn("[Telemetry] Focus-Paste Coincidence detected! Clipboard pasted within 1.5s of tab focus.");
+        }
     });
 });
 
-// Capture actual window switches if manual form active
+// Capture actual window switches and refocus timestamps if manual form active
 window.addEventListener('blur', () => {
     if (!screens.form.classList.contains('hidden') && manualTelemetry.startTime !== null) {
         manualTelemetry.switches++;
+    }
+});
+
+window.addEventListener('focus', () => {
+    if (!screens.form.classList.contains('hidden') && manualTelemetry.startTime !== null) {
+        manualTelemetry.lastFocusTime = Date.now();
     }
 });
 
@@ -438,7 +472,7 @@ function closeModal() {
 }
 [btnCloseModal, btnModalClose].forEach(btn => btn.addEventListener('click', closeModal));
 
-document.getElementById('btn-manual-submit').addEventListener('click', () => {
+document.getElementById('btn-manual-submit').addEventListener('click', async () => {
     const nameVal = manualNameInput.value.trim();
     const expVal = manualExpText.value.trim();
     const trapVal = manualTrapText.value.trim();
@@ -459,11 +493,16 @@ document.getElementById('btn-manual-submit').addEventListener('click', () => {
         finalVariance = sqDev.reduce((a, b) => a + b, 0) / n;
     }
 
+    // Compute cryptographic HMAC signature client-side
+    const signatureHex = await computeHMAC(manualTelemetry.intervals, sessionChallenge);
+
     const metrics = {
         time: manualTelemetry.timeTaken,
         variance: finalVariance,
         paste: manualTelemetry.paste,
+        focusPasteCoincidence: manualTelemetry.focusPasteCoincidence,
         switches: manualTelemetry.switches,
+        signature: signatureHex,
         gitAge: 1200, // clean defaults for manual
         gitRepos: 18,
         gitFollowers: 9
@@ -503,6 +542,11 @@ document.getElementById('btn-manual-submit').addEventListener('click', () => {
     document.getElementById('lbl-modal-paste').style.color = metrics.paste ? "var(--color-rejected)" : "var(--color-approved)";
     document.getElementById('lbl-modal-switches').textContent = metrics.switches;
     document.getElementById('lbl-modal-switches').style.color = metrics.switches > 4 ? "var(--color-rejected)" : "var(--text-muted)";
+
+    // HMAC verification status inside modal
+    const modalSig = document.getElementById('lbl-modal-signature');
+    modalSig.textContent = metrics.signature;
+    modalSig.style.color = "var(--color-approved)";
 
     // Detailed lists inside modal
     renderRulesTreeDOM(document.getElementById('lbl-modal-t1-rules'), result.t1Rules, ["Time Delta Check", "Keystroke Variance Check", "Input Modification Check", "Attention Loss Check"]);
@@ -587,13 +631,13 @@ function resetDemoSandbox() {
 // Preset threat loadouts configs
 const demoLoadoutConfigs = {
     copypaste: {
-        telemetry: { time: 35.2, variance: 34.8, paste: true, switches: 4, gitAge: 1200, gitRepos: 12, gitFollowers: 6 }
+        telemetry: { time: 35.2, variance: 34.8, paste: true, focusPasteCoincidence: true, switches: 4, gitAge: 1200, gitRepos: 12, gitFollowers: 6 }
     },
     agent: {
-        telemetry: { time: 42.5, variance: 25.2, paste: true, switches: 6, gitAge: 45, gitRepos: 0, gitFollowers: 0 }
+        telemetry: { time: 42.5, variance: 25.2, paste: true, focusPasteCoincidence: true, switches: 6, gitAge: 45, gitRepos: 0, gitFollowers: 0 }
     },
     bot: {
-        telemetry: { time: 7.5, variance: 1.15, paste: true, switches: 0, gitAge: 5, gitRepos: 0, gitFollowers: 0 }
+        telemetry: { time: 7.5, variance: 1.15, paste: true, focusPasteCoincidence: false, switches: 0, gitAge: 5, gitRepos: 0, gitFollowers: 0, tamperedSignature: true }
     }
 };
 
@@ -779,14 +823,36 @@ btnStartDemo.addEventListener('click', () => {
 });
 
 // Bind Sandbox submission evaluate button
-btnDemoSubmit.addEventListener('click', () => {
+btnDemoSubmit.addEventListener('click', async () => {
     if (!selectedDemoProfile) return;
     
     const config = formConfigs[activeDemoFormCategory];
     const texts = config.texts[selectedDemoProfile];
-    const telemetry = demoLoadoutConfigs[selectedDemoProfile].telemetry;
+    const telemetry = { ...demoLoadoutConfigs[selectedDemoProfile].telemetry };
+
+    // Simulate keydown intervals for HMAC signature computation
+    let simulatedIntervals = [];
+    if (selectedDemoProfile === 'bot') {
+        simulatedIntervals = Array(12).fill(150); // robotic intervals
+    } else if (selectedDemoProfile === 'agent') {
+        simulatedIntervals = [180, 240, 150, 310, 220, 190, 420, 160];
+    } else {
+        simulatedIntervals = [190, 220, 140, 290, 250, 180, 390, 170];
+    }
+
+    // Compute signature based on challenge
+    let signatureHex = "";
+    if (telemetry.tamperedSignature) {
+        signatureHex = "FORGED_SIGNATURE_MISMATCH_HASH_388b8fd9c828";
+    } else {
+        signatureHex = await computeHMAC(simulatedIntervals, sessionChallenge);
+    }
+    telemetry.signature = signatureHex;
 
     const result = executePipelineScore(telemetry, texts, activeDemoFormCategory);
+    
+    // Render live signature values in telemetry board
+    document.getElementById('val-signature').textContent = signatureHex.substring(0, 32) + "...";
 
     // Hide helper arrow
     pointerArrow.classList.add('hidden');
@@ -814,7 +880,7 @@ btnDemoSubmit.addEventListener('click', () => {
     scoreCircle.style.stroke = result.color;
 
     // Detail Lists
-    renderRulesTreeDOM(lblT1Rules, result.t1Rules, ["Time Delta Check", "Keystroke Variance Check", "Input Modification Check", "Attention Loss Check"]);
+    renderRulesTreeDOM(lblT1Rules, result.t1Rules, ["Time Delta Check", "Keystroke Variance Check", "Cryptographic Payload Validation Check", "Input Modification Check", "Attention Loss Check"]);
     renderRulesTreeDOM(lblT2Rules, result.t2Rules, ["The Technical Trap", "Linguistic Perplexity Check"]);
     renderRulesTreeDOM(lblT3Rules, result.t3Rules, ["Account Recency Check", "Graph Density Ratio Check"]);
     

@@ -9,84 +9,75 @@ import re
 from typing import Dict, Any, List, Tuple
 
 
-def evaluate_trap_question(response: str) -> Tuple[int, Dict[str, Any] | None]:
-    """Evaluates the trap question response to see if the participant fell for it.
+def evaluate_trap_question(response: str, category: str = "developer") -> Tuple[int, Dict[str, Any] | None]:
+    """Evaluates the trap question response using context-aware negation-proximity matching.
 
-    The question asks how to fix "CSS memory leaks". Since CSS stylesheet files
-    do not allocate/leak heap memory (which is a JavaScript runtime/DOM concern),
-    legitimate humans will flag the premise as false. Scammers or naive LLMs will
-    comply and construct a fake technical explanation.
+    Determines if the participant fell for the physically impossible premise of the
+    trap question (compliance) or successfully refuted it (refutation).
 
     Args:
         response: The text response to the trap question.
+        category: The form category ("developer", "speaker", or "habits").
 
     Returns:
         A tuple of (points, triggered_rule_dict_or_None).
     """
     clean_res = response.lower().strip()
+    word_count = len(clean_res.split())
 
-    # 1. Look for Refutation Indicators (indicates they recognized it is false/incorrect)
-    refutation_patterns = [
-        r"false premise",
-        r"incorrect premise",
-        r"doesn't have memory leaks",
-        r"does not have memory leaks",
-        r"don't think",
-        r"dont think",
-        r"don't believe",
-        r"dont believe",
-        r"can't leak",
-        r"cant leak",
-        r"cannot leak",
-        r"no memory leak",
-        r"no leak",
-        r"not leak",
-        r"no such thing",
-        r"not possible",
-        r"is a myth",
-        r"misunderstanding",
-        r"js/dom issue",
-        r"javascript memory leaks",
-        r"rendering engine bug",
-        r"css is not",
-        r"css doesn't",
-        r"css itself doesn't",
-        r"css does not"
-    ]
+    # Category-specific advanced negation proximity regex configurations
+    refutation_regexes = []
+    compliance_regexes = []
 
-    has_refutation = any(re.search(pat, clean_res) for pat in refutation_patterns)
+    if category == "developer":
+        refutation_regexes = [
+            # E.g. "css doesn't leak memory" or "no css memory leaks"
+            r"\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|logic|declarative)\b.{0,40}\b(leak|leaks|memory|heap|selector)\b",
+            r"\b(js/dom issue|rendering engine|browser layout|css itself does not|no such thing)\b"
+        ]
+        compliance_regexes = [
+            r"\b(fix|resolve|prevent|troubleshoot|inspect)\b.{0,40}\b(css memory leak|leak|heap|selector)\b",
+            r"\b(heap snapshot|selectors|optimize selectors|unused classes|selector complexity|dynamic class)\b"
+        ]
+    elif category == "speaker":
+        refutation_regexes = [
+            # E.g. "no projector on a speaker" or "cannot watch movies on it"
+            r"\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|only)\b.{0,40}\b(projector|hologram|holographic|screen|movie|movies)\b",
+            r"\b(only plays audio|just a speaker|no screen|not a projector|doesn't project|only plays music)\b"
+        ]
+        compliance_regexes = [
+            r"\b(liked|loved|enjoyed|watched|visual|crystal|clarity|cinematic|immersive|projected)\b.{0,40}\b(projector|hologram|holographic|screen|movie|movies)\b",
+            r"\b(watched movies|wall projector|holographic projector|hologram on my wall)\b"
+        ]
+    elif category == "habits":
+        refutation_regexes = [
+            # E.g. "phones cannot smell food" or "no smell settings exist"
+            r"\b(no|not|fake|impossible|doesn't|does not|don't|dont|can't|cant|cannot|myth|misunderstanding|issue|bug|joke)\b.{0,40}\b(smell|scent|odor|aroma|smell-o-vision)\b",
+            r"\b(phones can't smell|cannot smell food|doesn't emit scent|doesn't exist|not a real feature|can't smell photos)\b"
+        ]
+        compliance_regexes = [
+            r"\b(loved|liked|enjoyed|smelled|scent|aroma|olfactory|sensory|delicious|pizza|cookies)\b.{0,40}\b(smell|scent|odor|aroma|smell-o-vision)\b",
+            r"\b(smell the photos|aroma settings|scent transmission|smell food)\b"
+        ]
 
-    # 2. Look for Compliance Indicators (explaining how to fix the fake problem)
-    compliance_patterns = [
-        r"to fix css memory leaks",
-        r"resolve css memory leaks",
-        r"prevent css memory leaks",
-        r"optimize.*selectors",
-        r"inspect heap snapshots",
-        r"styles.*hogging memory",
-        r"clean up dynamic class",
-        r"unused classes",
-        r"selector complexity",
-        r"dynamic class injection",
-        r"degrade.*performance"
-    ]
+    # Evaluate matches using case-insensitive advanced regex proximity checking
+    has_refutation = any(re.search(pat, clean_res, re.IGNORECASE) for pat in refutation_regexes)
+    has_compliance = any(re.search(pat, clean_res, re.IGNORECASE) for pat in compliance_regexes)
 
-    has_compliance = any(re.search(pat, clean_res) for pat in compliance_patterns)
-
-    # If they proceed with a structured/confident explanation without any refutation skepticism
-    # Or if they specifically try to troubleshoot CSS heap memory leaks
-    if has_compliance or (not has_refutation and len(clean_res.split()) > 15):
+    # Trigger rule if they comply or write a substantial response (>15 words) with zero skepticism
+    if has_compliance or (not has_refutation and word_count > 15):
         points = 35
         return points, {
             "rule_name": "The Technical Trap",
             "points": points,
             "details": (
-                "Participant accepted the premise of a fake technical problem ('CSS memory leaks') "
-                "and structuralized a compliance-heavy explanation instead of refuting it."
+                f"Participant accepted the physically impossible premise of the trap question "
+                f"({category} loadout) and structuralized a compliant explanation instead of refuting it."
             )
         }
 
     return 0, None
+
 
 
 def evaluate_linguistic_perplexity(response: str, all_responses: List[str]) -> Tuple[int, Dict[str, Any] | None]:
