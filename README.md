@@ -134,6 +134,12 @@ python3 server.py
 This starts the built-in local server. Open your web browser and navigate to:
 👉 **[http://localhost:8000](http://localhost:8000)**
 
+If port `8000` is already in use, choose another port:
+
+```bash
+PORT=8001 python3 server.py
+```
+
 ---
 
 ### 🎥 How to Demo the Web Interface:
