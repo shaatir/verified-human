@@ -3,9 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verified-Human | Advanced Fraud & Semantic Security Pipeline</title>
+    <meta name="description" content="Verified-Human is a transparent behavioral-risk screening sandbox for participant recruitment." />
+    <meta name="theme-color" content="#0b111a" />
+    <meta property="og:title" content="Verified-Human | Behavioral risk screening" />
+    <meta property="og:description" content="A transparent sandbox for analyzing behavioral, semantic, and footprint risk signals." />
+    <meta property="og:type" content="website" />
+    <title>Verified-Human | Behavioral risk screening</title>
     
-    <!-- Premium Google Fonts matching Great Question -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -20,40 +24,70 @@
     <!-- 🏠 VIEW 1: HOME LANDING SCREEN             -->
     <!-- ========================================== -->
     <section id="screen-home" class="view-screen">
+        <header class="home-nav">
+            <a class="brand-lockup" href="#screen-home" aria-label="Verified-Human home">
+                <span class="brand-mark" aria-hidden="true">VH</span>
+                <span>Verified-Human</span>
+            </a>
+            <span class="environment-chip">DEMO ENVIRONMENT</span>
+        </header>
         <div class="home-hero">
-            <div class="logo-circle">🛡️</div>
-            <h1>Verified-Human</h1>
-            <p class="home-subtitle">Advanced Fraud Operations & Semantic Security Pipeline</p>
+            <p class="eyebrow">Participant integrity screening</p>
+            <h1>Find suspicious submissions before they contaminate your research.</h1>
+            <p class="home-subtitle">A transparent, local-first risk pipeline for behavioral telemetry, semantic traps, and basic footprint signals.</p>
             
             <div class="pipeline-badges">
-                <span class="badge-pill">⏱️ Telemetry Heuristics</span>
-                <span class="badge-pill">🧠 Semantic Agent</span>
-                <span class="badge-pill">🌐 OSINT Verification</span>
+                <span class="badge-pill">Behavioral telemetry</span>
+                <span class="badge-pill">Semantic consistency</span>
+                <span class="badge-pill">Footprint signals</span>
             </div>
         </div>
+
+        <section class="signal-rail" aria-label="Screening signals">
+            <article class="signal-rail__item">
+                <span class="signal-rail__index">01</span>
+                <h2>Observe behavior</h2>
+                <p>Timing, cadence, paste events, and attention shifts become reviewable evidence.</p>
+            </article>
+            <article class="signal-rail__item">
+                <span class="signal-rail__index">02</span>
+                <h2>Challenge assumptions</h2>
+                <p>Impossible-premise prompts distinguish skepticism from fluent compliance.</p>
+            </article>
+            <article class="signal-rail__item">
+                <span class="signal-rail__index">03</span>
+                <h2>Route with context</h2>
+                <p>Every score exposes its triggered rules so an operator can make the final call.</p>
+            </article>
+        </section>
 
         <div class="cta-grid">
             <!-- PATH A: MANUAL TEST -->
-            <div class="cta-card" id="cta-manual">
+            <button type="button" class="cta-card" id="cta-manual">
                 <div class="card-glow"></div>
-                <div class="card-icon">📝</div>
-                <h2>Fill in a Form</h2>
-                <p>Experience the security screening like a real participant. Type naturally to see how your own live behavioral cadence scores.</p>
-                <span class="cta-btn-label">Start Manual Test 👉</span>
-            </div>
+                <span class="card-kicker">Participant flow</span>
+                <h2>Run a participant test</h2>
+                <p>Type a response and inspect the behavioral signals the sandbox collects during a single screening session.</p>
+                <span class="cta-btn-label">Open participant flow <span aria-hidden="true">&rarr;</span></span>
+            </button>
 
             <!-- PATH B: WATCH DEMO -->
-            <div class="cta-card" id="cta-demo">
+            <button type="button" class="cta-card" id="cta-demo">
                 <div class="card-glow"></div>
-                <div class="card-icon">🔍</div>
-                <h2>Watch Sandbox Demo</h2>
-                <p>Observe the detection pipeline catch threats in real time. Simulate human copy-pasters, AI agents, and scripted bots.</p>
-                <span class="cta-btn-label">Open Sandbox 👉</span>
-            </div>
+                <span class="card-kicker">Analyst flow</span>
+                <h2>Review a risk simulation</h2>
+                <p>Compare preset copy-paste, LLM-assisted, and scripted-bot profiles against the same explainable rules.</p>
+                <span class="cta-btn-label">Open analyst console <span aria-hidden="true">&rarr;</span></span>
+            </button>
         </div>
 
+        <aside class="demo-notice" aria-label="Prototype boundary">
+            <span class="demo-notice__label">Prototype boundary</span>
+            <p>All profiles and footprint data are simulated. This demo illustrates triage signals; it does not establish a person's identity or replace human review.</p>
+        </aside>
+
         <footer class="app-footer">
-            <p>Project Verified-Human • Phase 1 Zero-Dependency Security Protocol</p>
+            <p>Verified-Human <span aria-hidden="true">/</span> local-first screening prototype <span aria-hidden="true">/</span> no live external lookups</p>
         </footer>
     </section>
 
@@ -62,7 +96,7 @@
     <!-- ========================================== -->
     <section id="screen-form" class="view-screen hidden">
         <header class="view-header">
-            <button class="btn-back" id="btn-form-back">⬅ Back to Home</button>
+            <button class="btn-back" id="btn-form-back">Back to home</button>
             <div class="header-titles">
                 <h1>Legitimate Screening Portal</h1>
                 <p>Please select a questionnaire below and fill out your response.</p>
@@ -71,9 +105,9 @@
 
         <!-- Form Category Switcher Tabs -->
         <div class="form-tabs-container">
-            <button class="tab-btn active" data-form="developer">🛠️ Developer Screening</button>
-            <button class="tab-btn" data-form="speaker">🔊 Wireless Speaker Review</button>
-            <button class="tab-btn" data-form="habits">📱 Screen Time Survey</button>
+            <button class="tab-btn active" data-form="developer">Developer screening</button>
+            <button class="tab-btn" data-form="speaker">Speaker review</button>
+            <button class="tab-btn" data-form="habits">App habits survey</button>
         </div>
 
         <div class="form-content-container">
@@ -96,7 +130,7 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="btn-manual-submit">
-                    <span>Submit Verification Form</span> 🛡️
+                    <span>Submit screening response</span>
                 </button>
             </form>
         </div>
@@ -107,10 +141,10 @@
     <!-- ========================================== -->
     <section id="screen-demo" class="view-screen hidden">
         <header class="view-header">
-            <button class="btn-back" id="btn-demo-back">⬅ Back to Home</button>
+            <button class="btn-back" id="btn-demo-back">Back to home</button>
             <div class="header-titles">
-                <h1>Security Sandbox Demo</h1>
-                <p>Load preset loadout profiles to watch the pipeline evaluate specific bot or AI threats.</p>
+                <h1>Analyst simulation</h1>
+                <p>Load preset profiles to inspect how the pipeline routes common bot and AI-assisted response patterns.</p>
             </div>
         </header>
 
@@ -119,22 +153,22 @@
             <span class="panel-label">1. SELECT TARGET THREAT PROFILE:</span>
             <div class="profile-buttons">
                 <button class="profile-btn" id="btn-load-copypaste" data-profile="copypaste">
-                    <span class="icon">📋</span> Human Copy-Paster
+                    Human copy-paster
                 </button>
                 <button class="profile-btn" id="btn-load-agent" data-profile="agent">
-                    <span class="icon">🧠</span> LLM Agent
+                    LLM-assisted response
                 </button>
                 <button class="profile-btn" id="btn-load-bot" data-profile="bot">
-                    <span class="icon">⚡</span> Scripted Bot
+                    Scripted bot
                 </button>
             </div>
         </div>
 
         <!-- Form Category Switcher Tabs for Demo -->
         <div class="form-tabs-container demo-tabs">
-            <button class="tab-btn active" data-form="developer">🛠️ Developer Onboarding</button>
-            <button class="tab-btn" data-form="speaker">🔊 Speaker E-Comm Review</button>
-            <button class="tab-btn" data-form="habits">📱 App Habits Survey</button>
+            <button class="tab-btn active" data-form="developer">Developer onboarding</button>
+            <button class="tab-btn" data-form="speaker">Speaker review</button>
+            <button class="tab-btn" data-form="habits">App habits survey</button>
         </div>
 
         <!-- Sandbox Dashboard Workspace -->
@@ -148,7 +182,7 @@
 
                 <div class="demo-trigger-area">
                     <button class="btn-demo-trigger" id="btn-start-demo" disabled>
-                        <span>🎬 START AUTOMATED TYPING DEMO</span>
+                        <span>Start automated typing demo</span>
                     </button>
                     <div class="typing-status-msg" id="typing-status-msg">Select a threat profile above to begin.</div>
                 </div>
@@ -173,14 +207,14 @@
 
                     <div class="submit-area-relative">
                         <button type="button" class="btn-primary" id="btn-demo-submit" disabled>
-                            <span>Evaluate Screening Submission</span> 🛡️
+                            <span>Evaluate screening submission</span>
                         </button>
                     </div>
                 </form>
 
                 <!-- Live Instrument Monitor Panel -->
                 <div class="telemetry-box">
-                    <h3>📟 Telemetry Event Instrumentation</h3>
+                    <h3>Telemetry instrumentation</h3>
                     <div class="telemetry-grid">
                         <div class="telemetry-card">
                             <span class="label">Time Taken</span>
@@ -199,7 +233,7 @@
                             <span class="value mono" id="val-switches">0</span>
                         </div>
                         <div class="telemetry-card" style="grid-column: span 2;">
-                            <span class="label">HMAC Telemetry Signature (SHA-256)</span>
+                            <span class="label">Demo session checksum (SHA-256)</span>
                             <span class="value mono" id="val-signature" style="font-size: 0.75rem; word-break: break-all; color: var(--color-primary);">AWAITING_INPUT</span>
                         </div>
                     </div>
@@ -209,7 +243,7 @@
             <!-- Right Sandbox Column: Dynamic Scorecard -->
             <div class="panel report-panel">
                 <div class="panel-header">
-                    <h2>Legitimacy & Risk Assessment</h2>
+                    <h2>Risk assessment</h2>
                     <span class="badge" id="report-status-badge">AWAITING SUBMISSION</span>
                 </div>
                 
@@ -285,7 +319,7 @@
             <button class="btn-close-modal" id="btn-close-modal">×</button>
             
             <div class="modal-header">
-                <h2>🛡️ Screening Assessment Report</h2>
+                <h2>Screening assessment report</h2>
                 <span class="badge" id="modal-status-badge">APPROVED</span>
             </div>
 
@@ -317,7 +351,7 @@
             </div>
             
             <div id="lbl-modal-signature-wrapper" style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; font-size: 0.78rem; font-family: var(--font-mono); word-break: break-all; text-align: center; color: var(--text-muted);">
-                🔑 HMAC-SHA256: <strong id="lbl-modal-signature" style="color: var(--color-primary);">AWAITING_SIGNATURE</strong>
+                Demo checksum: <strong id="lbl-modal-signature" style="color: var(--color-primary);">AWAITING_SIGNATURE</strong>
             </div>
 
             <!-- Rules checklist in modal -->

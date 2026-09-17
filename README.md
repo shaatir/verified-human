@@ -1,7 +1,9 @@
-# 🛡️ Verified-Human
-### Advanced Behavioral & Semantic Screening Pipeline for Participant Recruitment
+# Verified-Human
+### Transparent behavioral-risk screening for participant recruitment
 
-> Designed to solve a critical trust-and-safety problem in automated participant recruitment: **catching LLM-powered survey scammers, automated sybils, and scripted bots in real time.**
+> A local-first sandbox for triaging suspicious submissions with behavioral telemetry, semantic consistency checks, and simulated footprint signals. It helps an operator investigate risk; it does not prove a person's identity.
+
+**Demo boundary:** the web interface uses simulated profiles and client-side telemetry. No live OSINT lookup occurs, and the demo checksum is not a server-verified integrity mechanism. See the [security model](./docs/security-model.md) before interpreting it as production security infrastructure.
 
 ---
 
@@ -9,7 +11,7 @@
 
 When platforms offer rewards or incentives for user feedback, they become prime targets for professional survey scammers. Traditionally, CAPTCHAs stop low-level bots, but they are powerless against **LLM-assisted humans** or **sophisticated agentic scripts** that generate highly coherent, syntactically correct, yet completely fraudulent answers.
 
-**Verified-Human** is a zero-dependency, three-tier screening pipeline and interactive visualization dashboard designed to identify these modern threats. It doesn't just read the text; it audits **how the participant types**, **how their attention shifts**, and **how they respond to deceptive cognitive traps**.
+**Verified-Human** is a zero-dependency, three-tier screening pipeline and interactive analyst dashboard. It does not just read text; it surfaces **how a participant types**, **how their attention shifts**, and **how they respond to deceptive cognitive traps** as evidence for human review.
 
 ---
 
@@ -23,9 +25,9 @@ graph TD
     B --> C[Tier 2: Semantic Agent Traps]
     C --> D[Tier 3: OSINT Footprint Integrity]
     D --> E[Aggregated Risk Score 0-100]
-    E -->|Risk < 30| F[🟢 APPROVED]
-    E -->|30 <= Risk < 60| G[🟡 FLAGGED FOR REVIEW]
-    E -->|Risk >= 60| H[🔴 AUTO_REJECTED]
+    E -->|Risk < 30| F[APPROVED]
+    E -->|30 <= Risk < 60| G[FLAGGED FOR REVIEW]
+    E -->|Risk >= 60| H[AUTO REJECTED]
 ```
 
 ### ⏱️ Tier 1: Behavioral Heuristics & Telemetry
