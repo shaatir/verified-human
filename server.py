@@ -20,6 +20,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
 
+    def end_headers(self):
+        # The client DP module changes with the page. Do not let the browser
+        # keep an older dp.js and draw a different mechanism than the tests.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def log_message(self, format, *args):
         """Silences verbose terminal connection logging for cleaner CLI experience."""
         # Clean request auditing logs instead of dumping spam

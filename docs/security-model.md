@@ -25,6 +25,32 @@ they acted fraudulently.
   culture, and task-specific bias before production use.
 - The project intentionally makes no live external API calls and stores no participant data.
 
+## Differential privacy
+
+Aggregate analytics can be released under differential privacy. Individual approve,
+flag, and reject decisions cannot, and this prototype does not pretend otherwise.
+
+- **Local export.** Paste, focus-paste, tab-switch, speed, and cadence predicates
+  are permanent randomized-response bits, memoized for the UTC day. Paste counts
+  and tab-switch counts use discrete Laplace. One sampled keystroke gap uses
+  optimized unary encoding. Raw inter-key intervals are not part of that export.
+  The default budget is ε = 1 per device-day. A third transmission that day is
+  refused. Lifetime spend stops at ε = 8.
+- **Central aggregates.** A curator who already holds rows in order to score them
+  publishes discrete-Laplace counts and histograms through a file-backed ledger.
+  The default dataset budget is ε = 1. Re-running a publication replays it.
+  A batch that does not fit charges nothing. Cohort size is public under the
+  substitution neighboring relation. Missing variance and missing tab counts
+  are an unknown bin, not a suspicious value.
+- **Decisions.** The score is an exact function of one respondent. Noise would
+  change who is stopped, and publishing the decision reveals that respondent to
+  whoever receives it. The guarantee on an aggregate does not cover the decision log.
+
+A client who can modify the page can skip the local noise or lie. Local DP protects
+honest clients from the analytics collector. It is not a fraud control. The full
+write-up is in the README section "Privacy-preserving analytics with differential
+privacy" and in [the evaluation](./dp-evaluation.md).
+
 ## Production work required
 
 1. Define lawful consent, retention, deletion, and appeal procedures for participant data.
@@ -32,3 +58,4 @@ they acted fraudulently.
 3. Independently assess the scoring model for accuracy, disparate impact, and adversarial evasion.
 4. Add authenticated data sources with rate limits, provenance, and privacy review before any OSINT integration.
 5. Keep a human reviewer in the final decision path and audit overrides.
+6. Set an explicit epsilon for every published aggregate, and do not describe the decision log as differentially private.
