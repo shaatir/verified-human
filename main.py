@@ -181,47 +181,59 @@ def run_dp_unit_tests(base_dir: str) -> bool:
     return result.wasSuccessful()
 
 
-def display_privacy_analytics(participants: List[Dict[str, Any]]) -> None:
-    """Print exact decisions beside the central DP aggregate release.
+def display_privacy_analytics(base_dir: str) -> None:
+    """Print exact status counts beside one central DP release of 2,000 people.
 
-    Exact query answers are shown as a curator-only comparison. They are not
-    fields on the release object.
+    The cohort is synthetic and seeded, so a second run replays the stored
+    publication instead of drawing new noise. Exact query answers are a
+    curator-only comparison. They are not fields on the release object.
+    Individual names are not printed.
     """
     import random
-    from src.analytics import cohort_privacy_report, exact_cohort_statistics
+    from collections import Counter
 
-    report = cohort_privacy_report(participants, rng=random.SystemRandom())
+    from src.analytics import (
+        STATUS_BINS,
+        cohort_privacy_report,
+        exact_cohort_statistics,
+        synthesize_population,
+    )
+    from src.ledger import DatasetLedger
+
+    cohort_rng = random.Random(20261021)
+    population = synthesize_population(2000, cohort_rng)
+    ledger_path = os.path.join(base_dir, "data", "ledgers", "synthetic-cohort.json")
+    ledger = DatasetLedger(ledger_path)
+    report = cohort_privacy_report(population, ledger, rng=random.SystemRandom())
     decisions = report["individual_decisions"]["results"]
-    exact = exact_cohort_statistics(participants, decisions)
+    exact = exact_cohort_statistics(population, decisions)
     release = report["aggregate_release"]
     cohort_size = release["cohort_size"]
+    counts = Counter(decision["status"] for decision in decisions)
 
-    print(f"\n{CLR_BOLD}PRIVACY REPORT{CLR_RESET}  mock cohort n={cohort_size}")
+    print(f"\n{CLR_BOLD}PRIVACY REPORT{CLR_RESET}  synthetic cohort n={cohort_size}  seed=20261021")
     print(f"{CLR_YELLOW}Individual decisions are exact and are NOT differentially private.{CLR_RESET}")
-    print(f"{CLR_DIM}{report['individual_decisions']['reason']}{CLR_RESET}\n")
+    print(f"{CLR_DIM}{report['individual_decisions']['reason']}{CLR_RESET}")
+    print(f"{CLR_DIM}Status counts only. Per-person scores stay exact and are not listed.{CLR_RESET}\n")
+    for status in STATUS_BINS:
+        print(f"  {get_status_color(status)}{status:<22}{CLR_RESET} {counts[status]:>5}")
 
-    print(f"{CLR_DIM}{'Participant':<22} {'Status':<22} {'Score':>6}{CLR_RESET}")
-    for decision in decisions:
-        color = get_status_color(decision["status"])
-        print(
-            f"{decision['participant_id']:<22} {color}{decision['status']:<22}{CLR_RESET} "
-            f"{decision['cumulative_score']:>6}"
-        )
-
-    print(f"\n{CLR_CYAN}{CLR_BOLD}Central DP aggregate release{CLR_RESET}")
+    replay = "replayed stored publication; no new noise and no new spend" if release.get("replayed") else "new publication stored in the dataset ledger"
+    print(f"\n{CLR_CYAN}{CLR_BOLD}Central DP aggregate release{CLR_RESET}  ({replay})")
     print(
-        f"  ε={release['epsilon']:.2f}  composition=basic  "
+        f"  ε={release['epsilon']:.2f}  composition=basic  mechanism=discrete Laplace  "
         f"spent={release['accountant']['spent_epsilon']:.2f}  "
         f"remaining={release['accountant']['remaining_epsilon']:.2f}"
     )
     print(f"  {CLR_DIM}{release['cohort_size_reason']}{CLR_RESET}")
+    print(f"  {CLR_DIM}{release['float_laplace']}{CLR_RESET}")
     print(f"  {CLR_DIM}Curator columns are not part of the released object.{CLR_RESET}")
 
     def print_count(label: str, exact_value: int, stat: Dict[str, Any]) -> None:
         print(
             f"  {label:<24} curator {exact_value:>6}   "
-            f"noisy {stat['noisy']:>8.2f}   published {stat['published']:>8.2f}   "
-            f"ε={stat['epsilon']:.2f}  scale={stat['scale']:.2f}"
+            f"noisy {stat['noisy']:>8}   published {stat['published']:>8}   "
+            f"ε={stat['epsilon']:.2f}"
         )
 
     stats = release["statistics"]
@@ -230,32 +242,27 @@ def display_privacy_analytics(participants: List[Dict[str, Any]]) -> None:
     print_count("Excessive tab switches", exact["excessive_tabs_count"], stats["excessive_tabs_count"])
 
     def print_histogram(label: str, exact_counts: List[int], stat: Dict[str, Any]) -> None:
-        print(f"\n  {CLR_BOLD}{label}{CLR_RESET}  L1 sensitivity {stat['sensitivity_l1']}  "
-              f"ε={stat['epsilon']:.2f}  scale={stat['scale']:.2f}")
+        print(
+            f"\n  {CLR_BOLD}{label}{CLR_RESET}  L1 sensitivity {stat['sensitivity_l1']}  "
+            f"ε={stat['epsilon']:.2f}  noise variance={stat['noise_variance']:.2f}"
+        )
         for name, exact_value, noisy, published in zip(
             stat["bins"], exact_counts, stat["noisy"], stat["published"]
         ):
             print(
                 f"    {name:<22} curator {exact_value:>6}   "
-                f"noisy {noisy:>8.2f}   published {published:>8.2f}"
+                f"noisy {noisy:>8}   published {published:>8}"
             )
 
     print_histogram("Status", exact["status_histogram"], stats["status_histogram"])
     print_histogram("Tab switches", exact["tab_switch_histogram"], stats["tab_switch_histogram"])
     print_histogram("Cadence variance (ms)", exact["cadence_histogram"], stats["cadence_histogram"])
 
-    print(f"\n  {CLR_BOLD}Ledger{CLR_RESET}")
+    print(f"\n  {CLR_BOLD}Ledger{CLR_RESET}  {ledger_path}")
     for entry in release["accountant"]["entries"]:
         print(
-            f"    {entry['name']:<24} {entry['mechanism']:<12} "
+            f"    {entry['name']:<24} {entry['mechanism']:<18} "
             f"ε={entry['epsilon']:.2f}  Δ={entry['sensitivity']}"
-        )
-
-    if cohort_size < 50:
-        print(
-            f"\n{CLR_YELLOW}n={cohort_size} is smaller than the noise scale. "
-            f"These counts show the mechanism; they are not a prevalence. "
-            f"See docs/dp-evaluation.md for error at n=2000.{CLR_RESET}\n"
         )
 
 
@@ -279,7 +286,7 @@ def main() -> None:
     )
     group.add_argument(
         "--analytics", action="store_true",
-        help="Print exact decisions and a central DP aggregate release for the mock cohort."
+        help="Print exact status counts and a central DP release for a seeded cohort of 2,000."
     )
 
     args = parser.parse_args()
@@ -301,7 +308,7 @@ def main() -> None:
         sys.exit(0 if routing_ok and privacy_ok else 1)
 
     if args.analytics:
-        display_privacy_analytics(participants)
+        display_privacy_analytics(base_dir)
         sys.exit(0)
 
     if args.all:
@@ -346,7 +353,7 @@ def main() -> None:
                 report = process_participant_screening(p)
                 display_risk_report(report, p)
         elif choice_idx == len(participants) + 2:
-            display_privacy_analytics(participants)
+            display_privacy_analytics(base_dir)
         elif choice_idx == len(participants) + 3:
             print("Exiting...")
             sys.exit(0)

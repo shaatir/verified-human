@@ -567,7 +567,8 @@ document.getElementById('btn-manual-submit').addEventListener('click', async () 
     renderPrivacyExport(
         document.getElementById('privacy-export-modal'),
         metrics,
-        manualTelemetry.intervals.slice()
+        manualTelemetry.intervals.slice(),
+        "manual-session"
     );
 
     // Open Modal Popup
@@ -901,21 +902,37 @@ btnDemoSubmit.addEventListener('click', async () => {
     renderPrivacyExport(
         document.getElementById('privacy-export-demo'),
         telemetry,
-        simulatedIntervals.slice()
+        simulatedIntervals.slice(),
+        "demo-" + selectedDemoProfile
     );
 });
 
-function renderPrivacyExport(container, metrics, intervals) {
+function renderPrivacyExport(container, metrics, intervals, deviceId) {
     if (!container || typeof VerifiedHumanDP === "undefined") return;
-    const release = VerifiedHumanDP.localRelease({
-        paste_detected: Boolean(metrics.paste),
-        paste_count: metrics.pasteCount != null ? metrics.pasteCount : (metrics.paste ? 1 : 0),
-        focus_paste_coincidence: Boolean(metrics.focusPasteCoincidence),
-        tab_switches: metrics.switches || 0,
-        time_taken_seconds: metrics.time || 0,
-        typing_cadence_variance_ms: metrics.variance,
-        keystroke_intervals_ms: intervals || []
-    });
+    let release;
+    try {
+        release = VerifiedHumanDP.exportForDevice({
+            paste_detected: Boolean(metrics.paste),
+            paste_count: metrics.pasteCount != null ? metrics.pasteCount : (metrics.paste ? 1 : 0),
+            focus_paste_coincidence: Boolean(metrics.focusPasteCoincidence),
+            tab_switches: metrics.switches == null ? null : metrics.switches,
+            time_taken_seconds: metrics.time == null ? null : metrics.time,
+            typing_cadence_variance_ms: metrics.variance == null ? null : metrics.variance,
+            keystroke_intervals_ms: intervals || []
+        }, { deviceId: deviceId || "browser" });
+    } catch (error) {
+        container.hidden = false;
+        container.replaceChildren();
+        const heading = document.createElement("h3");
+        heading.textContent = "Privacy-preserving analytics";
+        const note = document.createElement("p");
+        note.textContent = error.name === "ExportCapExceeded"
+            ? "This device already sent today's memoized analytics report. No fresh noise was drawn, and nothing more will be sent today."
+            : "The analytics export was refused: " + error.message;
+        container.appendChild(heading);
+        container.appendChild(note);
+        return;
+    }
     const summary = VerifiedHumanDP.summarizeRelease(release);
     container.hidden = false;
     container.replaceChildren();

@@ -11,12 +11,16 @@ Two paths, deliberately separate:
    basic-composition accountant. This is the release a transparency report or
    a downstream analyst can see without receiving the row-level table.
 
-Local DP is computed on the client (``local_dp_release`` / ``web/dp.js``) and
+Local DP is computed on the client (``DeviceLedger`` / ``web/dp.js``) and
 is not reconstructed here. The curator of this module is assumed to already
 hold the rows, because the fraud decision required them. Central DP protects
 the published aggregates against someone who does not also receive the
 decisions or the microdata. Giving both to the same party does not make the
 decisions private.
+
+Integer counts use discrete Laplace. A missing variance or a missing tab
+count is an unknown bin, not a suspicious one. The fraud scorer is a
+different function and still has its own defaults.
 """
 
 from __future__ import annotations
@@ -30,18 +34,23 @@ from src.dp import (
     CENTRAL_SHARES,
     EXCESSIVE_TAB_THRESHOLD,
     LOW_VARIANCE_MS,
-    PrivacyAccountant,
     allocate_budget,
-    laplace_histogram,
-    laplace_mechanism,
-    laplace_scale,
+    discrete_laplace_mechanism,
+    discrete_laplace_variance,
 )
+from src.ledger import DatasetLedger
 from src.pipeline import process_participant_screening
 
 
 STATUS_BINS: tuple[str, ...] = ("APPROVED", "FLAGGED_FOR_REVIEW", "AUTO_REJECTED")
-TAB_SWITCH_BIN_LABELS: tuple[str, ...] = ("0", "1-2", "3-4", "5-8", "9+")
-CADENCE_BIN_LABELS: tuple[str, ...] = ("[0, 5)", "[5, 15)", "[15, 40)", "[40, inf)")
+TAB_SWITCH_BIN_LABELS: tuple[str, ...] = ("0", "1-2", "3-4", "5-8", "9+", "unknown")
+CADENCE_BIN_LABELS: tuple[str, ...] = (
+    "[0, 5)",
+    "[5, 15)",
+    "[15, 40)",
+    "[40, inf)",
+    "unknown",
+)
 
 # Why each path is or is not differentially private. Tests lock these flags.
 PRIVACY_PATHS: dict[str, dict[str, object]] = {
@@ -59,25 +68,26 @@ PRIVACY_PATHS: dict[str, dict[str, object]] = {
     },
     "local_aggregate_export": {
         "differentially_private": True,
-        "mechanism": "local randomized response and Laplace",
+        "mechanism": "memoized randomized response, discrete Laplace, and OUE",
         "reason": (
             "Before aggregate telemetry leaves the device, predicates are passed "
-            "through randomized response and clipped counts and the keystroke-gap "
-            "histogram are passed through the Laplace mechanism. Raw inter-key "
-            "intervals are not in that export. This protects a client from the "
-            "analytics collector. It is not an anti-fraud control: a modified "
-            "client can skip the noise or lie."
+            "through permanent randomized response, clipped integer counts through "
+            "discrete Laplace, and one sampled keystroke gap through optimized "
+            "unary encoding. The device ledger reuses that draw for the rest of "
+            "the UTC day. Raw inter-key intervals are not in that export. This "
+            "protects a client from the analytics collector. It is not an "
+            "anti-fraud control: a modified client can skip the noise or lie."
         ),
     },
     "central_dashboard_aggregates": {
         "differentially_private": True,
-        "mechanism": "central Laplace, basic composition",
+        "mechanism": "central discrete Laplace, file-backed basic composition",
         "reason": (
             "The curator holds row-level records in order to score them. "
-            "Published counts and histograms add Laplace noise calibrated to "
-            "substitution sensitivity, and the accountant sums the epsilons. "
-            "The guarantee applies to that aggregate release, not to the "
-            "decision log."
+            "Published counts and histograms add discrete Laplace noise calibrated "
+            "to substitution sensitivity. The dataset ledger records the spend "
+            "and replays the same publication. The guarantee applies to that "
+            "aggregate release, not to the decision log."
         ),
     },
 }
@@ -139,14 +149,22 @@ def exact_cohort_statistics(
         pasted = bool(participant.get("paste_detected", False))
         if pasted:
             paste += 1
-        variance = float(participant.get("typing_cadence_variance_ms", 0.0))
-        if variance < LOW_VARIANCE_MS:
-            low_variance += 1
-        tabs = int(participant.get("tab_switches_during_form", 0))
-        if tabs > EXCESSIVE_TAB_THRESHOLD:
-            excessive_tabs += 1
-        tab_counts[_tab_bin(tabs)] += 1
-        cadence_counts[_cadence_bin(variance)] += 1
+        # Missing variance is unknown. It is not imputed to 0, which the
+        # fraud scorer treats as suspiciously low. The scorer is unchanged.
+        if _present(participant, "typing_cadence_variance_ms"):
+            variance = float(participant["typing_cadence_variance_ms"])
+            if variance < LOW_VARIANCE_MS:
+                low_variance += 1
+            cadence_counts[_cadence_bin(variance)] += 1
+        else:
+            cadence_counts[_unknown_index(CADENCE_BIN_LABELS)] += 1
+        if _present(participant, "tab_switches_during_form"):
+            tabs = int(participant["tab_switches_during_form"])
+            if tabs > EXCESSIVE_TAB_THRESHOLD:
+                excessive_tabs += 1
+            tab_counts[_tab_bin(tabs)] += 1
+        else:
+            tab_counts[_unknown_index(TAB_SWITCH_BIN_LABELS)] += 1
 
     return {
         "cohort_size": len(participants),
@@ -161,26 +179,42 @@ def exact_cohort_statistics(
 
 def central_dashboard_release(
     participants: Sequence[Mapping[str, object]],
+    ledger: DatasetLedger,
     epsilon: float = CENTRAL_EPSILON_DEFAULT,
     rng: random.Random | None = None,
-    accountant: PrivacyAccountant | None = None,
     decisions: Sequence[Mapping[str, object]] | None = None,
+    publication_name: str = "dashboard",
 ) -> dict[str, object]:
-    """Noisy counts and histograms for one dashboard publication.
+    """Noisy counts and histograms for one named dashboard publication.
 
-    ``epsilon`` is the privacy budget of this publication. Pass the same
-    ``PrivacyAccountant`` into later publications to compose them. A fresh
-    accountant is created when the caller does not supply one; that does not
-    compose with any previous release.
+    ``ledger`` is required. Omitting it is a ``TypeError``. A fresh accountant
+    is not created, because a forgotten ledger would hand every caller a new
+    budget. If ``publication_name`` is already stored, the stored noisy values
+    are returned and nothing is charged. If this batch does not fit, the
+    ledger raises ``PrivacyBudgetExceeded`` and the sample is discarded.
 
     The returned object contains noisy values only. Exact query answers and
     row-level fields are not included.
     """
+    if not isinstance(ledger, DatasetLedger):
+        raise TypeError("central_dashboard_release requires a DatasetLedger")
+    stored = ledger.get_publication(publication_name)
+    if stored is not None:
+        return stored
+
     generator = rng if rng is not None else random.SystemRandom()
     budget = allocate_budget(epsilon, CENTRAL_SHARES)
-    if accountant is None:
-        accountant = PrivacyAccountant(epsilon)
     exact = exact_cohort_statistics(participants, decisions)
+    entries: list[dict[str, object]] = []
+
+    def charge(name: str, query_epsilon: float, sensitivity: int, note: str) -> None:
+        entries.append({
+            "name": name,
+            "epsilon": query_epsilon,
+            "mechanism": "discrete_laplace",
+            "sensitivity": sensitivity,
+            "note": note,
+        })
 
     statistics: dict[str, object] = {
         "status_histogram": _noise_histogram(
@@ -189,7 +223,7 @@ def central_dashboard_release(
             counts=exact["status_histogram"],  # type: ignore[arg-type]
             epsilon=budget["status_histogram"],
             rng=generator,
-            accountant=accountant,
+            charge=charge,
             note="each respondent has one status; substitution L1 sensitivity is 2",
         ),
         "paste_detected_count": _noise_count(
@@ -197,7 +231,7 @@ def central_dashboard_release(
             true_count=int(exact["paste_detected_count"]),  # type: ignore[arg-type]
             epsilon=budget["paste_detected_count"],
             rng=generator,
-            accountant=accountant,
+            charge=charge,
             note="boolean predicate; substitution sensitivity is 1",
         ),
         "low_variance_count": _noise_count(
@@ -205,16 +239,22 @@ def central_dashboard_release(
             true_count=int(exact["low_variance_count"]),  # type: ignore[arg-type]
             epsilon=budget["low_variance_count"],
             rng=generator,
-            accountant=accountant,
-            note=f"count of cadence variance < {LOW_VARIANCE_MS}ms; sensitivity 1",
+            charge=charge,
+            note=(
+                f"count of known cadence variance < {LOW_VARIANCE_MS}ms; "
+                "missing variance is the unknown histogram bin, not this count; sensitivity 1"
+            ),
         ),
         "excessive_tabs_count": _noise_count(
             name="excessive_tabs_count",
             true_count=int(exact["excessive_tabs_count"]),  # type: ignore[arg-type]
             epsilon=budget["excessive_tabs_count"],
             rng=generator,
-            accountant=accountant,
-            note=f"count of tab switches > {EXCESSIVE_TAB_THRESHOLD}; sensitivity 1",
+            charge=charge,
+            note=(
+                f"count of known tab switches > {EXCESSIVE_TAB_THRESHOLD}; "
+                "missing tab counts are the unknown histogram bin; sensitivity 1"
+            ),
         ),
         "tab_switch_histogram": _noise_histogram(
             name="tab_switch_histogram",
@@ -222,8 +262,8 @@ def central_dashboard_release(
             counts=exact["tab_switch_histogram"],  # type: ignore[arg-type]
             epsilon=budget["tab_switch_histogram"],
             rng=generator,
-            accountant=accountant,
-            note="one bin per respondent; substitution L1 sensitivity is 2",
+            charge=charge,
+            note="one bin per respondent, including unknown; substitution L1 sensitivity is 2",
         ),
         "cadence_histogram": _noise_histogram(
             name="cadence_histogram",
@@ -231,34 +271,52 @@ def central_dashboard_release(
             counts=exact["cadence_histogram"],  # type: ignore[arg-type]
             epsilon=budget["cadence_histogram"],
             rng=generator,
-            accountant=accountant,
-            note="one bin per respondent; substitution L1 sensitivity is 2",
+            charge=charge,
+            note="one bin per respondent, including unknown; substitution L1 sensitivity is 2",
         ),
     }
 
-    return {
+    spent_before = ledger.spent()
+    release = {
         "privacy_model": "central",
         "differentially_private": True,
-        "definition": "pure epsilon central differential privacy, basic composition",
+        "definition": "pure epsilon central differential privacy, discrete Laplace, basic composition",
         "neighboring_relation": "substitution",
         "cohort_size": len(participants),
         "cohort_size_is_public": True,
         "cohort_size_reason": (
             "Substitution neighbors have the same number of rows, so cohort size "
-            "is invariant and is not given Laplace noise."
+            "is invariant and is not given noise."
         ),
         "epsilon": float(epsilon),
+        "float_laplace": (
+            "not used; adding continuous Laplace noise to an integer can leak "
+            "the integer (Mironov 2012)"
+        ),
         "individual_decisions_included": False,
+        "publication_name": publication_name,
+        "replayed": False,
         "statistics": statistics,
-        "accountant": accountant.summary(),
+        "accountant": {
+            "composition": "basic",
+            "dataset_budget": ledger.total_epsilon,
+            "spent_epsilon": spent_before + float(epsilon),
+            "remaining_epsilon": ledger.total_epsilon - spent_before - float(epsilon),
+            "entries": entries,
+        },
     }
+    # Commit is the authority. On PrivacyBudgetExceeded the sample is dropped
+    # because this return never happens. On a stored name, the stored release
+    # replaces the sample so two callers cannot average two draws.
+    return ledger.commit_publication(publication_name, entries, release)
 
 
 def cohort_privacy_report(
     participants: Sequence[Mapping[str, object]],
+    ledger: DatasetLedger,
     epsilon: float = CENTRAL_EPSILON_DEFAULT,
     rng: random.Random | None = None,
-    accountant: PrivacyAccountant | None = None,
+    publication_name: str = "dashboard",
 ) -> dict[str, object]:
     """Exact decisions beside one central DP aggregate release.
 
@@ -269,10 +327,11 @@ def cohort_privacy_report(
     decisions = screen_cohort(participants)
     aggregate = central_dashboard_release(
         participants,
+        ledger,
         epsilon=epsilon,
         rng=rng,
-        accountant=accountant,
         decisions=decisions,
+        publication_name=publication_name,
     )
     return {
         "individual_decisions": {
@@ -414,20 +473,21 @@ def _noise_count(
     true_count: int,
     epsilon: float,
     rng: random.Random,
-    accountant: PrivacyAccountant,
+    charge,
     note: str,
 ) -> dict[str, object]:
-    sensitivity = 1.0
-    scale = laplace_scale(sensitivity, epsilon)
-    accountant.spend(name, epsilon, "laplace", sensitivity, note=note)
-    noisy = laplace_mechanism(float(true_count), sensitivity, epsilon, rng)
+    sensitivity = 1
+    charge(name, epsilon, sensitivity, note)
+    noisy = discrete_laplace_mechanism(true_count, sensitivity, epsilon, rng)
+    success = -math.expm1(-epsilon / sensitivity)
     return {
-        "mechanism": "laplace",
+        "mechanism": "discrete_laplace",
         "epsilon": epsilon,
         "sensitivity": sensitivity,
-        "scale": scale,
+        "success_probability": success,
+        "noise_variance": discrete_laplace_variance(epsilon, sensitivity),
         "noisy": noisy,
-        "published": max(0.0, noisy),
+        "published": max(0, noisy),
     }
 
 
@@ -437,22 +497,34 @@ def _noise_histogram(
     counts: Sequence[int],
     epsilon: float,
     rng: random.Random,
-    accountant: PrivacyAccountant,
+    charge,
     note: str,
 ) -> dict[str, object]:
-    sensitivity = 2.0
-    scale = laplace_scale(sensitivity, epsilon)
-    accountant.spend(name, epsilon, "laplace", sensitivity, note=note)
-    noisy = laplace_histogram([float(count) for count in counts], sensitivity, epsilon, rng)
+    sensitivity = 2
+    charge(name, epsilon, sensitivity, note)
+    noisy = [
+        discrete_laplace_mechanism(int(count), sensitivity, epsilon, rng)
+        for count in counts
+    ]
+    success = -math.expm1(-epsilon / sensitivity)
     return {
         "bins": list(labels),
-        "mechanism": "laplace",
+        "mechanism": "discrete_laplace",
         "epsilon": epsilon,
         "sensitivity_l1": sensitivity,
-        "scale": scale,
+        "success_probability": success,
+        "noise_variance": discrete_laplace_variance(epsilon, sensitivity),
         "noisy": noisy,
-        "published": [max(0.0, value) for value in noisy],
+        "published": [max(0, value) for value in noisy],
     }
+
+
+def _present(participant: Mapping[str, object], key: str) -> bool:
+    return key in participant and participant[key] is not None
+
+
+def _unknown_index(labels: Sequence[str]) -> int:
+    return list(labels).index("unknown")
 
 
 def _tab_bin(tabs: int) -> int:

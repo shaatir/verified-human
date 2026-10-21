@@ -1,80 +1,87 @@
 # Differential privacy evaluation
 
-Accuracy of the aggregate releases as ε changes. This is not a classifier
-accuracy. Individual fraud routing does not read the noisy values, so it stays
-aligned with the non-private pipeline at every ε.
+Synthetic cohort of 2000 respondents, seed `20261021`, 200 independent noise trials.
+Per-respondent routing agreed with the labeled role on **2000 / 2000** records. The scorer does not read the noisy values, so that agreement does not depend on epsilon.
 
-Re-run the measurement with:
+Each local trial draws the mechanism once per client. A device ledger would store that draw for the UTC day and replay it. Repeats are not averaged here, because averaging memoized answers would not remove noise and averaging fresh draws would.
 
-```bash
-python3 scripts/eval_dp_tradeoff.py
-```
+Central trials are separate single publications. They are not sequential spends of one dataset ledger. The default dataset budget is ε = 1, so one dashboard publication exhausts it and a rerun replays the stored integers.
 
-## Setup
+Error on a mean of n local reports falls like `1/sqrt(n)`, not `1/n`. Discrete Laplace on a clipped integer has variance `2(1-p)/p²` with `p = 1 - exp(-ε/Δ)`. The standard deviation of the mean is that standard deviation divided by `sqrt(n)`.
 
-- Cohort: 2000 synthetic respondents, seed 20261021.
-- Mix: 1200 human, 300 scripted bot, 300 LLM-assisted, 200 borderline.
-- Trials per ε: 30. Only the privacy noise is redrawn. The cohort is fixed.
-- ε grid: 0.25, 0.5, 1.0, 2.0, 4.0, 8.0. The same total is split by the default budget shares in `src/dp.py`.
-- Local randomized-response error is the mean absolute error of the debiased rate against the true predicate rate.
-- Local Laplace error is against the clipped contribution (paste counts are clipped to 5 and tab switches to 10 before noise). The synthetic draws sit inside those clips, so clipping bias is zero here.
-- The keystroke figure is the L1 distance between the average noisy per-client histogram and the average true histogram. Empty clients would contribute the zero vector; every synthetic client types.
-- Central error uses the unclamped Laplace answers, which are unbiased. The dashboard's published copy clamps negatives at zero. That clamp is post-processing: it stays ε-DP and it adds a little bias on tiny counts.
-- Per-respondent routing agreement with the non-private pipeline on this cohort: **100%** (2000 / 2000). That figure does not move with ε.
+## Accuracy versus epsilon
 
-## Local DP
+Local tab error is against the mean after clipping to `[0, 4]`. The clipped mean is **1.6065**. The unclipped mean is **2.2275**. Values above the clip, including the synthetic LLM and borderline tab counts, are biased downward on purpose so the sensitivity stays finite.
 
-Each client adds their own noise. Averaging 2000 clients is what makes the estimates usable. A single export is not a meaningful reading of that person.
+True paste rate **0.3000**, excessive-tab rate **0.2500**, low-variance rate **0.1500**.
 
-| ε | Paste rate MAE | Excessive-tab rate MAE | Low-variance rate MAE | Mean tab switches MAE | Keystroke histogram L1 |
-| --- | --- | --- | --- | --- | --- |
-| 0.2500 | 0.2726 | 0.3127 | 0.5018 | 11.1368 | 10.1749 |
-| 0.5000 | 0.1839 | 0.1988 | 0.1857 | 5.6581 | 5.0351 |
-| 1.0000 | 0.0768 | 0.0730 | 0.1140 | 2.4943 | 2.6800 |
-| 2.0000 | 0.0365 | 0.0463 | 0.0600 | 1.1509 | 1.2636 |
-| 4.0000 | 0.0177 | 0.0247 | 0.0292 | 0.6956 | 0.6002 |
-| 8.0000 | 0.0075 | 0.0112 | 0.0174 | 0.3183 | 0.3466 |
+| ε | local paste MAE | local excessive-tab MAE | local low-variance MAE | local tab MAE | local histogram L1 | central paste MAE | central status L1 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.25 | 0.3327 | 0.8935 | 0.6087 | 1.7149 | 2.7221 | 0.0141 | 76.6850 |
+| 0.5 | 0.1759 | 0.4714 | 0.2809 | 0.9755 | 1.4327 | 0.0057 | 37.4600 |
+| 1 | 0.0786 | 0.2386 | 0.1432 | 0.5115 | 0.7350 | 0.0034 | 20.9350 |
+| 2 | 0.0399 | 0.1191 | 0.0658 | 0.2008 | 0.3678 | 0.0015 | 9.7500 |
+| 4 | 0.0205 | 0.0537 | 0.0324 | 0.1164 | 0.1834 | 0.0008 | 4.8350 |
+| 8 | 0.0097 | 0.0257 | 0.0187 | 0.0507 | 0.0919 | 0.0003 | 2.1200 |
 
-At the default local budget **ε = 1**, mean absolute error is about **0.0768** on the paste rate, **0.0730** on the excessive-tab rate, **0.1140** on the low-variance rate, **2.4943** tab switches on the mean, and **2.6800** L1 on the cadence histogram.
+![Error versus epsilon](charts/error_vs_epsilon.svg)
 
-The boolean rates are the local statistics you can actually use at this budget. Paste detection receives 25% of ε, so that bit is released at ε = 0.25. The true paste rate on this cohort is **0.3000**, and the MAE above is the absolute error around it. The magnitude queries are noisier than a quick 1/n argument suggests. Tab switches are clipped at 10, so the local sensitivity is 10, and that query receives only 10% of the budget. The Laplace scale is therefore 100. Averaging independent local noise shrinks error as `1/sqrt(n)`, not `1/n`: the standard deviation of the mean is `scale * sqrt(2/n)`, about 3.2 tab switches here, and the measured MAE is 2.4943. The true mean of clipped tab switches is **2.2275**, so ε = 1 does not resolve it. The histogram has the same shape of problem. L1 sensitivity 2 and a 10% budget share set the per-bin scale to 20, and the average histogram's L1 error (2.6800) is larger than a distribution that sums to 1.
+The chart is log-log. Central status error is plotted as L1 divided by cohort size so it shares an axis with the rates. The table keeps the L1 in people.
 
-Raising the total ε moves every column down. By ε = 8 the mean tab error is about 0.32 and the histogram L1 is about 0.35, small enough to see the shape. That spend is a product choice, and the accountant is where it gets written down. It is also why the same question, asked once at the curator under central DP, is so much more accurate at ε = 1.
+At the default ε = 1 the local paste MAE is **0.0786**, the clipped tab-switch MAE is **0.5115**, and the keystroke histogram L1 is **0.7350**. Central paste-rate MAE is **0.0034** and the status histogram L1 is **20.9350** people.
 
-## Central DP
+## Histogram mechanisms
 
-The curator holds the rows, scores them exactly, and noises each published query once. Substitution sensitivity is 1 for a boolean count and 2 for a histogram that puts each person in one bin.
+The release uses optimized unary encoding (Wang, Zheng, Wu, Zhao, USENIX Security 2017) on four bins: `[0, 80)`, `[80, 250)`, `[250, ∞)`, and `unknown`. One uniformly sampled gap per client. No gaps is the unknown bin. The estimand is the mean of the per-client distributions.
 
-| ε | Status histogram L1 | Paste count MAE | Paste rate MAE |
-| --- | --- | --- | --- |
-| 0.2500 | 81.6432 | 20.6592 | 0.0103 |
-| 0.5000 | 33.9379 | 19.9720 | 0.0100 |
-| 1.0000 | 19.9584 | 7.9446 | 0.0040 |
-| 2.0000 | 9.8245 | 3.4413 | 0.0017 |
-| 4.0000 | 5.0469 | 1.7067 | 0.0009 |
-| 8.0000 | 2.4282 | 0.7887 | 0.0004 |
+Count-mean sketch and Hadamard count-mean sketch (Apple, Learning with Privacy at Scale) are a benchmark at the histogram's share of ε = 1, which is ε = 0.2000. 40 trials, same sampled items, error against that empirical one-hot mean:
 
-At the default central budget **ε = 1**, the status histogram's mean L1 error is about **19.9584** people out of 2000 (paste-rate MAE **0.0040**). The same ε buys a much smaller error than local DP because the noise is added once, not once per client.
+| mechanism | L1 |
+| --- | ---: |
+| OUE (the release) | 0.6708 |
+| CMS, width 32, depth 8 | 0.6820 |
+| HCMS, width 8 | 1.5922 |
 
-On the four-person mock cohort the same ε = 1 status release has mean L1 error **19.5097** across 200 trials. That is larger than the cohort. The CLI analytics view of the mock data demonstrates the mechanism; it is not a prevalence estimate. Central DP on a handful of rows is honest noise, not a precise dashboard.
+CMS lands next to OUE. HCMS is worse: a Hadamard row is a compression step for a large domain, and four bins do not need it. The release stays OUE.
 
-## Bias check
+## Composition
 
-Mean signed error at ε = 1. A debiased randomized-response rate and an unclamped Laplace query are unbiased, so these averages should sit near zero. Thirty trials still leave scatter: the local tab-switch mean has a per-trial standard deviation near 3, and the central paste count near 9, so a signed error of a few tenths is Monte Carlo noise rather than a bias in the estimator.
+These are generic bounds for composing pure ε-DP mechanisms. They are not a privacy-loss distribution of discrete Laplace. δ = 1e-6.
 
-| Estimator at ε = 1 | Mean signed error |
-| --- | --- |
-| Local paste rate | 0.0185 |
-| Local excessive-tab rate | 0.0114 |
-| Local low-variance rate | -0.0100 |
-| Local mean tab switches | -0.7146 |
-| Central paste count | -0.6325 |
+Basic composition is `kε`. Advanced composition (Dwork, Rothblum, Vadhan) is `sqrt(2 k ln(1/δ)) ε + k ε (e^ε - 1)`. At ε = 1 that bound is looser than basic composition, including at k = 1. zCDP (Bun, Steinke) uses ρ = ε²/2 per release. RDP uses the same pure-DP curve, (α, α ε²/2), minimized over α. When the per-release epsilon is small, zCDP and RDP beat basic composition as k grows. The dataset ledger still records basic composition, which is valid at the default ε = 1 and does not depend on a δ.
 
-## How to read this in an interview
+| k | per-release ε | basic | advanced | zCDP | RDP |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.1 | 0.1000 | 0.5362 | 0.5307 | 0.5339 |
+| 2 | 0.1 | 0.2000 | 0.7644 | 0.7534 | 0.7657 |
+| 4 | 0.1 | 0.4000 | 1.0934 | 1.0713 | 1.0807 |
+| 8 | 0.1 | 0.8000 | 1.5709 | 1.5268 | 1.5607 |
+| 16 | 0.1 | 1.6000 | 2.2709 | 2.1826 | 2.2010 |
+| 32 | 0.1 | 3.2000 | 3.3101 | 3.1335 | 3.1351 |
+| 64 | 0.1 | 6.4000 | 4.8783 | 4.5252 | 4.5336 |
+| 128 | 0.1 | 12.8000 | 7.2933 | 6.5871 | 6.6031 |
+| 1 | 1 | 1.0000 | 6.9748 | 5.7565 | 5.7631 |
+| 2 | 1 | 2.0000 | 10.8704 | 8.4338 | 8.4539 |
+| 4 | 1 | 4.0000 | 17.3862 | 12.5130 | 12.6052 |
+| 8 | 1 | 8.0000 | 28.6139 | 18.8677 | 18.9078 |
+| 16 | 1 | 16.0000 | 48.5186 | 29.0261 | 29.2103 |
+| 32 | 1 | 32.0000 | 84.7204 | 45.7354 | 45.8155 |
+| 64 | 1 | 64.0000 | 152.0222 | 74.0522 | 74.4207 |
+| 128 | 1 | 128.0000 | 279.4108 | 123.4708 | 123.6310 |
 
-- Local DP protects the client from the collector. Utility is an average over many clients. One record is supposed to look wrong.
-- Central DP protects a published aggregate from someone who does not also get the microdata or the decision log. It is the higher-utility choice when the curator must already hold the rows in order to approve or reject.
-- ε = 1 is the default on both paths. The tables are the reason a product might spend more, and the accountant is where that spend is written down.
-- Routing accuracy is not on these curves. Changing ε does not change who is flagged.
+![Composition bounds](charts/composition.svg)
 
-Runtime of this script on the machine that generated the tables: 14.0s.
+## Amplification by shuffling
+
+This repository does not shuffle reports. The bound below is what Theorem 5.3 of Balle, Bell, Gascón, and Nissim (CRYPTO 2019, The Privacy Blanket of the Shuffle Model) proves for a shuffled batch of n ε-local reports, with C = 1 - e^{-2}. It is an upper bound on a central epsilon, solved numerically. It is not a property of the server.
+
+For the composed local report at ε = 1, n = 2000, δ = 1e-06, the numeric bound is central **ε ≤ 0.3460**.
+
+The whole local report is one ε-local message under basic composition of its queries, so the local epsilon in the formula is 1, not the share of a single predicate.
+
+## Mechanisms and the float issue
+
+Integer counts use discrete Laplace: the difference of two geometric random variables, added to the integer query with integer arithmetic. Sampling continuous Laplace noise in floating point and adding it to a secret does not implement the Laplace mechanism. The gaps between representable values depend on the magnitude of the secret, so the likelihood ratio can be infinite (Mironov, 2012). A single 32-bit uniform through the inverse CDF makes the support finite as well. This code does not do that.
+
+Missing time, missing variance, and a missing tab count are unknown. In the local predicates they are not treated as fast, low-variance, or excessive. In the central histograms they fall in an explicit unknown bin. The exact fraud scorer still uses its own defaults and can flag a missing field. Those paths are different on purpose.
+

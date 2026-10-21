@@ -2,10 +2,21 @@
 
    Mirrors src/dp.py. Tests fail if the public constants or the budget split drift.
    The fraud score does not read this output. Raw keystroke intervals are used
-   only to fill a histogram and are not copied into the release.
+   only to sample one cadence bin and are not copied into the release.
 
-   Default coins come from crypto.getRandomValues. Predictable noise can be
-   subtracted by a collector who knows the seed, which removes the guarantee.
+   Integer counts use discrete Laplace (a difference of two geometric draws).
+   Adding continuous Laplace noise, especially from one 32-bit uniform, can
+   leak an integer query because the gaps between representable floats depend
+   on the secret (Mironov, 2012). This file does not sample continuous Laplace.
+   The geometric inverse CDF uses a uniform in (0, 1) and returns an integer.
+   The secret is added with integer arithmetic. There is no hard cap on the
+   integer. The production coin uses 53 bits from crypto.getRandomValues, not
+   one uint32, so the geometric tail is not chopped at 2^32.
+
+   The device ledger memoizes the whole report for a UTC day (permanent
+   randomized response). A later export that day replays it and spends nothing.
+   Averaging repeats therefore does not remove the noise. The daily cap is a
+   transmission limit. The lifetime cap composes days by basic composition.
 */
 (function (root, factory) {
     const api = factory();
@@ -20,31 +31,36 @@
 
     const CONSTANTS = {
         local_epsilon_default: 1.0,
-        paste_count_clip: 5.0,
-        tab_switch_clip: 10.0,
+        daily_export_cap: 2,
+        lifetime_epsilon_cap: 8.0,
+        paste_count_clip: 5,
+        tab_switch_clip: 4,
         excessive_tab_threshold: 4,
         fast_submission_seconds: 30.0,
         low_variance_ms: 5.0,
-        keystroke_bin_edges_ms: [50.0, 150.0, 300.0, 600.0],
-        keystroke_histogram_l1_sensitivity: 2.0,
+        keystroke_bin_edges_ms: [80.0, 250.0],
+        keystroke_bin_labels: ["[0, 80)", "[80, 250)", "[250, inf)", "unknown"],
         local_shares: [
-            ["paste_detected", 25],
-            ["focus_paste_coincidence", 8],
-            ["excessive_tab_switches", 20],
-            ["fast_submission", 7],
-            ["low_cadence_variance", 15],
-            ["paste_count", 5],
-            ["tab_switches", 10],
-            ["keystroke_histogram", 10]
+            ["paste_detected", 22],
+            ["focus_paste_coincidence", 4],
+            ["excessive_tab_switches", 8],
+            ["fast_submission", 4],
+            ["low_cadence_variance", 12],
+            ["paste_count", 8],
+            ["tab_switches", 22],
+            ["keystroke_histogram", 20]
         ]
     };
 
-    const BIN_LABELS = ["[0, 50)", "[50, 150)", "[150, 300)", "[300, 600)", "[600, inf)"];
-    const RR_QUERIES = CONSTANTS.local_shares
-        .map(function (pair) { return pair[0]; })
-        .filter(function (name) {
-            return name !== "paste_count" && name !== "tab_switches" && name !== "keystroke_histogram";
-        });
+    const BIN_LABELS = CONSTANTS.keystroke_bin_labels;
+    const STORAGE_PREFIX = "verified-human-dp-ledger:";
+    const RR_QUERIES = [
+        "paste_detected",
+        "focus_paste_coincidence",
+        "excessive_tab_switches",
+        "fast_submission",
+        "low_cadence_variance"
+    ];
 
     function assertShareSum() {
         const sum = CONSTANTS.local_shares.reduce(function (total, pair) {
@@ -83,7 +99,7 @@
     }
 
     function defaultRng() {
-        const buffer = new Uint32Array(1);
+        const buffer = new Uint32Array(2);
         const webCrypto = (typeof crypto !== "undefined" && crypto.getRandomValues)
             ? crypto
             : null;
@@ -92,13 +108,21 @@
         }
         return function () {
             webCrypto.getRandomValues(buffer);
-            return buffer[0] / 4294967296;
+            // 53-bit uniform in [0, 1). One uint32 would cap a geometric tail.
+            const hi = buffer[0] >>> 5;
+            const lo = buffer[1] >>> 6;
+            return (hi * 67108864 + lo) / 9007199254740992;
         };
+    }
+
+    function namedError(name, message) {
+        const error = new Error(message);
+        error.name = name;
+        return error;
     }
 
     function rrProbabilities(epsilon) {
         requireEpsilon(epsilon);
-        // p = 1 / (1 + e^{-ε}) matches src/dp.py and stays finite for large ε.
         if (epsilon >= 700) {
             return { p: 1, q: 0 };
         }
@@ -134,32 +158,68 @@
         return total / reports.length;
     }
 
-    function laplaceScale(sensitivity, epsilon) {
+    function geometricFailures(successProbability, rng) {
+        if (!(successProbability > 0 && successProbability <= 1)) {
+            throw new Error("success probability must be in (0, 1]");
+        }
+        if (successProbability >= 1) {
+            return 0;
+        }
+        let uniform = 0;
+        do {
+            uniform = rng();
+        } while (!(uniform > 0));
+        const failures = Math.floor(Math.log(uniform) / Math.log1p(-successProbability));
+        return failures < 0 ? 0 : failures;
+    }
+
+    function sampleDiscreteLaplace(epsilon, sensitivity, rng) {
         requireEpsilon(epsilon);
-        if (!isFinite(sensitivity) || sensitivity < 0) {
-            throw new Error("sensitivity must be finite and >= 0");
+        if ((sensitivity | 0) !== sensitivity || sensitivity < 0) {
+            throw new Error("sensitivity must be a non-negative integer");
         }
         if (sensitivity === 0) {
             return 0;
         }
-        return sensitivity / epsilon;
-    }
-
-    function sampleLaplace(scale, rng) {
-        if (!isFinite(scale) || scale < 0) {
-            throw new Error("Laplace scale must be finite and >= 0");
-        }
-        if (scale === 0) {
+        const success = -Math.expm1(-epsilon / sensitivity);
+        if (success >= 1) {
             return 0;
         }
-        let probability = 0;
-        do {
-            probability = rng();
-        } while (!(probability > 0 && probability < 1));
-        if (probability < 0.5) {
-            return scale * Math.log(2 * probability);
+        if (!(success > 0)) {
+            throw new Error("discrete Laplace success probability collapsed");
         }
-        return -scale * Math.log(2 * (1 - probability));
+        return geometricFailures(success, rng) - geometricFailures(success, rng);
+    }
+
+    function discreteLaplaceMechanism(value, sensitivity, epsilon, rng) {
+        if ((value | 0) !== value) {
+            throw new Error("discrete Laplace query must be an integer");
+        }
+        return value + sampleDiscreteLaplace(epsilon, sensitivity, rng);
+    }
+
+    function oueProbabilities(epsilon) {
+        requireEpsilon(epsilon);
+        if (epsilon >= 700) {
+            return { p: 0.5, q: 0 };
+        }
+        return { p: 0.5, q: 1 / (Math.exp(epsilon) + 1) };
+    }
+
+    function oueEncode(index, domain, epsilon, rng) {
+        if (domain < 1 || index < 0 || index >= domain) {
+            throw new Error("OUE index is outside the domain");
+        }
+        const probs = oueProbabilities(epsilon);
+        const encoded = [];
+        for (let position = 0; position < domain; position++) {
+            if (position === index) {
+                encoded.push(rng() < probs.p ? 1 : 0);
+            } else {
+                encoded.push(rng() < probs.q ? 1 : 0);
+            }
+        }
+        return encoded;
     }
 
     function clip(value, low, high) {
@@ -175,6 +235,10 @@
         return value;
     }
 
+    function present(telemetry, key) {
+        return telemetry[key] != null;
+    }
+
     function asBool(value, label) {
         if (typeof value === "boolean") return value;
         if (value === 0 || value === 1) return Boolean(value);
@@ -182,16 +246,16 @@
     }
 
     function populationVariance(values) {
-        if (!values.length) return 0;
+        const count = values.length;
         let mean = 0;
-        for (let i = 0; i < values.length; i++) mean += values[i];
-        mean /= values.length;
+        for (let i = 0; i < count; i++) mean += values[i];
+        mean /= count;
         let sum = 0;
-        for (let i = 0; i < values.length; i++) {
+        for (let i = 0; i < count; i++) {
             const delta = values[i] - mean;
             sum += delta * delta;
         }
-        return sum / values.length;
+        return sum / count;
     }
 
     function keystrokeBinIndex(intervalMs) {
@@ -205,26 +269,33 @@
         return edges.length;
     }
 
-    function keystrokeProportionHistogram(intervals) {
-        const bins = [0, 0, 0, 0, 0];
-        for (let i = 0; i < intervals.length; i++) {
-            bins[keystrokeBinIndex(intervals[i])] += 1;
+    function sampleKeystrokeItem(intervals, rng) {
+        if (!intervals.length) {
+            return CONSTANTS.keystroke_bin_edges_ms.length;
         }
-        const total = bins.reduce(function (sum, count) { return sum + count; }, 0);
-        if (total === 0) return bins.map(function () { return 0; });
-        return bins.map(function (count) { return count / total; });
+        const choice = intervals[Math.floor(rng() * intervals.length)];
+        return keystrokeBinIndex(choice);
     }
 
     function localView(telemetry) {
-        const pasteDetected = asBool(telemetry.paste_detected || false, "paste_detected");
-        const pasteCount = telemetry.paste_count == null
-            ? (pasteDetected ? 1 : 0)
-            : finite(telemetry.paste_count, "paste_count");
-        const focus = asBool(telemetry.focus_paste_coincidence || false, "focus_paste_coincidence");
-        const tabs = telemetry.tab_switches != null
-            ? finite(telemetry.tab_switches, "tab_switches")
-            : finite(telemetry.tab_switches_during_form || 0, "tab_switches");
-        const rawIntervals = telemetry.keystroke_intervals_ms || [];
+        const pasteDetected = present(telemetry, "paste_detected")
+            ? asBool(telemetry.paste_detected, "paste_detected")
+            : false;
+        const pasteCount = present(telemetry, "paste_count")
+            ? finite(telemetry.paste_count, "paste_count")
+            : (pasteDetected ? 1 : 0);
+        const focus = present(telemetry, "focus_paste_coincidence")
+            ? asBool(telemetry.focus_paste_coincidence, "focus_paste_coincidence")
+            : false;
+        let tabSwitches = null;
+        if (present(telemetry, "tab_switches")) {
+            tabSwitches = finite(telemetry.tab_switches, "tab_switches");
+        } else if (present(telemetry, "tab_switches_during_form")) {
+            tabSwitches = finite(telemetry.tab_switches_during_form, "tab_switches");
+        }
+        const rawIntervals = telemetry.keystroke_intervals_ms == null
+            ? []
+            : telemetry.keystroke_intervals_ms;
         if (!Array.isArray(rawIntervals)) {
             throw new Error("keystroke_intervals_ms must be a list");
         }
@@ -232,26 +303,30 @@
             return finite(value, "keystroke interval");
         });
         let variance = null;
-        if (telemetry.typing_cadence_variance_ms != null) {
+        if (present(telemetry, "typing_cadence_variance_ms")) {
             variance = finite(telemetry.typing_cadence_variance_ms, "typing_cadence_variance_ms");
         } else if (intervals.length >= 2) {
             variance = populationVariance(intervals);
         }
-        const timeTaken = telemetry.time_taken_seconds != null
-            ? telemetry.time_taken_seconds
-            : telemetry.time;
-        const fast = timeTaken == null
-            ? false
-            : finite(timeTaken, "time_taken_seconds") < CONSTANTS.fast_submission_seconds;
+        let fast = false;
+        if (present(telemetry, "time_taken_seconds")) {
+            fast = finite(telemetry.time_taken_seconds, "time_taken_seconds") < CONSTANTS.fast_submission_seconds;
+        } else if (present(telemetry, "time")) {
+            fast = finite(telemetry.time, "time_taken_seconds") < CONSTANTS.fast_submission_seconds;
+        }
         return {
             paste_detected: pasteDetected,
-            paste_count: clip(pasteCount, 0, CONSTANTS.paste_count_clip),
+            paste_count: Math.round(clip(pasteCount, 0, CONSTANTS.paste_count_clip)),
             focus_paste_coincidence: focus,
-            tab_switches: clip(tabs, 0, CONSTANTS.tab_switch_clip),
-            excessive_tab_switches: tabs > CONSTANTS.excessive_tab_threshold,
+            tab_switches: tabSwitches == null
+                ? 0
+                : Math.round(clip(tabSwitches, 0, CONSTANTS.tab_switch_clip)),
+            excessive_tab_switches: tabSwitches == null
+                ? false
+                : tabSwitches > CONSTANTS.excessive_tab_threshold,
             fast_submission: fast,
             low_cadence_variance: variance == null ? false : variance < CONSTANTS.low_variance_ms,
-            histogram: keystrokeProportionHistogram(intervals)
+            intervals: intervals
         };
     }
 
@@ -266,7 +341,7 @@
         let spent = 0;
         function spend(name, queryEpsilon, mechanism, sensitivity, note) {
             if (spent + queryEpsilon > epsilon + 1e-9) {
-                throw new Error("privacy budget exceeded on " + name);
+                throw namedError("PrivacyBudgetExceeded", "privacy budget exceeded on " + name);
             }
             spent += queryEpsilon;
             entries.push({
@@ -283,7 +358,7 @@
         RR_QUERIES.forEach(function (name) {
             const queryEpsilon = budget[name];
             const probs = rrProbabilities(queryEpsilon);
-            spend(name, queryEpsilon, "randomized_response", 1, "binary predicate; truth probability e^ε/(e^ε+1)");
+            spend(name, queryEpsilon, "randomized_response", 1, "permanent randomized response; replay does not redraw");
             values[name] = randomizedResponse(view[name], queryEpsilon, rng);
             rrParameters[name] = {
                 epsilon: queryEpsilon,
@@ -300,55 +375,54 @@
             const name = spec[0];
             const sensitivity = spec[1];
             const queryEpsilon = budget[name];
-            const scale = laplaceScale(sensitivity, queryEpsilon);
-            spend(name, queryEpsilon, "laplace", sensitivity, "clipped contribution");
-            values[name] = view[name] + sampleLaplace(scale, rng);
+            spend(name, queryEpsilon, "discrete_laplace", sensitivity, "integer geometric mechanism");
+            values[name] = discreteLaplaceMechanism(view[name], sensitivity, queryEpsilon, rng);
             laplaceParameters[name] = {
                 epsilon: queryEpsilon,
                 sensitivity: sensitivity,
-                scale: scale,
-                clip: [0, sensitivity]
+                clip: [0, sensitivity],
+                distribution: "discrete_laplace"
             };
         });
 
         const histEpsilon = budget.keystroke_histogram;
-        const histSensitivity = CONSTANTS.keystroke_histogram_l1_sensitivity;
-        const histScale = laplaceScale(histSensitivity, histEpsilon);
+        const item = sampleKeystrokeItem(view.intervals, rng);
         spend(
             "keystroke_histogram",
             histEpsilon,
-            "laplace",
-            histSensitivity,
-            "vector Laplace on the per-client distribution; one charge for all bins"
+            "oue",
+            1,
+            "one sampled cadence bin; optimized unary encoding"
         );
-        values.keystroke_histogram = view.histogram.map(function (count) {
-            return count + sampleLaplace(histScale, rng);
-        });
-        laplaceParameters.keystroke_histogram = {
-            epsilon: histEpsilon,
-            sensitivity_l1: histSensitivity,
-            scale: histScale,
-            bin_edges_ms: CONSTANTS.keystroke_bin_edges_ms.slice(),
-            bin_labels: BIN_LABELS.slice(),
-            estimand: "mean of per-client keystroke-gap distributions; a client with no gaps contributes the zero vector"
-        };
+        values.keystroke_histogram = oueEncode(item, BIN_LABELS.length, histEpsilon, rng);
+        const oue = oueProbabilities(histEpsilon);
 
         return {
             privacy_model: "local",
             differentially_private: true,
-            definition: "pure epsilon local differential privacy, basic composition",
+            definition: "pure epsilon local DP, basic composition, one draw",
             neighboring_relation: "any two telemetry records from one client",
             epsilon: epsilon,
+            memoized: false,
             raw_keystrokes_included: false,
             individual_decision_included: false,
             values: values,
             public_parameters: {
                 rr_probabilities: rrParameters,
-                laplace: laplaceParameters,
+                discrete_laplace: laplaceParameters,
+                keystroke_histogram: {
+                    mechanism: "oue",
+                    epsilon: histEpsilon,
+                    p_keep_one: oue.p,
+                    q_flip_zero: oue.q,
+                    bin_labels: BIN_LABELS.slice(),
+                    estimand: "mean of per-client cadence distributions, one uniformly sampled gap; no gaps is the unknown bin"
+                },
                 thresholds: {
                     excessive_tab_switches: "> " + CONSTANTS.excessive_tab_threshold,
                     fast_submission_seconds: "< " + CONSTANTS.fast_submission_seconds,
-                    low_cadence_variance_ms: "< " + CONSTANTS.low_variance_ms
+                    low_cadence_variance_ms: "< " + CONSTANTS.low_variance_ms,
+                    missing: "unknown predicates are false and are not treated as suspicious"
                 }
             },
             accountant: {
@@ -361,6 +435,81 @@
         };
     }
 
+    function memoryStorage() {
+        const data = {};
+        return {
+            get: function (key) {
+                return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
+            },
+            set: function (key, value) {
+                data[key] = String(value);
+            }
+        };
+    }
+
+    function browserStorage() {
+        if (typeof localStorage === "undefined") {
+            return memoryStorage();
+        }
+        return {
+            get: function (key) { return localStorage.getItem(key); },
+            set: function (key, value) { localStorage.setItem(key, value); }
+        };
+    }
+
+    function utcDay(date) {
+        const value = date || new Date();
+        return value.toISOString().slice(0, 10);
+    }
+
+    function exportForDevice(telemetry, options) {
+        const settings = options || {};
+        const deviceId = settings.deviceId || "browser";
+        const today = settings.today || utcDay();
+        const epsilon = settings.epsilon == null ? CONSTANTS.local_epsilon_default : settings.epsilon;
+        requireEpsilon(epsilon);
+        const storage = settings.storage || browserStorage();
+        const key = STORAGE_PREFIX + deviceId;
+        const raw = storage.get(key);
+        const state = raw ? JSON.parse(raw) : { lifetime_epsilon_spent: 0, days: {} };
+        const days = state.days;
+        if (days[today]) {
+            const day = days[today];
+            if (day.transmissions >= CONSTANTS.daily_export_cap) {
+                throw namedError(
+                    "ExportCapExceeded",
+                    "device already transmitted the " + today + " report " + CONSTANTS.daily_export_cap + " times"
+                );
+            }
+            day.transmissions += 1;
+            storage.set(key, JSON.stringify(state));
+            const replayed = JSON.parse(JSON.stringify(day.report));
+            replayed.memoized = true;
+            replayed.transmission = day.transmissions;
+            replayed.privacy_spend_this_call = 0;
+            return replayed;
+        }
+        if (state.lifetime_epsilon_spent + epsilon > CONSTANTS.lifetime_epsilon_cap + 1e-9) {
+            throw namedError(
+                "PrivacyBudgetExceeded",
+                "lifetime epsilon cap would be exceeded; this day was not created"
+            );
+        }
+        const report = localRelease(telemetry, { epsilon: epsilon, rng: settings.rng });
+        report.memoized = true;
+        report.transmission = 1;
+        report.privacy_spend_this_call = epsilon;
+        report.memoization = "permanent randomized response for this UTC day; later changes to the telemetry do not redraw the answers";
+        state.lifetime_epsilon_spent += epsilon;
+        days[today] = {
+            epsilon: epsilon,
+            transmissions: 1,
+            report: report
+        };
+        storage.set(key, JSON.stringify(state));
+        return JSON.parse(JSON.stringify(report));
+    }
+
     function formatNumber(value) {
         const rounded = Math.round(value * 100) / 100;
         return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
@@ -368,26 +517,32 @@
 
     function summarizeRelease(release) {
         const histogram = release.values.keystroke_histogram;
-        const labels = release.public_parameters.laplace.keystroke_histogram.bin_labels;
+        const labels = release.public_parameters.keystroke_histogram.bin_labels;
         const rows = [
             { label: "Paste bit (randomized response)", value: String(release.values.paste_detected) },
-            { label: "Paste count (Laplace)", value: formatNumber(release.values.paste_count) },
+            { label: "Paste count (discrete Laplace)", value: String(release.values.paste_count) },
             { label: "Focus-paste bit (randomized response)", value: String(release.values.focus_paste_coincidence) },
-            { label: "Tab switches (Laplace)", value: formatNumber(release.values.tab_switches) },
+            { label: "Tab switches (discrete Laplace)", value: String(release.values.tab_switches) },
             { label: "Excessive tabs bit (randomized response)", value: String(release.values.excessive_tab_switches) },
             { label: "Fast submission bit (randomized response)", value: String(release.values.fast_submission) },
             { label: "Low cadence-variance bit (randomized response)", value: String(release.values.low_cadence_variance) }
         ];
         labels.forEach(function (label, index) {
             rows.push({
-                label: "Keystroke gaps " + label,
-                value: formatNumber(histogram[index])
+                label: "Keystroke OUE bit " + label,
+                value: String(histogram[index])
             });
         });
+        let memo = " This draw has not been stored on a device ledger yet.";
+        if (release.memoized && release.privacy_spend_this_call > 0) {
+            memo = " Stored for this UTC day. This export spent ε " + formatNumber(release.privacy_spend_this_call) + ". A later export today resends these answers and spends ε 0.";
+        } else if (release.memoized) {
+            memo = " Memoized for this UTC day. This repeat sends the same answers and spends ε 0.";
+        }
         return {
             headline: "Local DP export, ε=" + formatNumber(release.epsilon) + " (basic composition)",
             decision_note: "The risk score is an exact decision about this respondent and is not differentially private.",
-            export_note: "These values are the record that would leave the device for aggregate analytics. One person's noisy record is not their true behavior. Raw keystroke intervals are not included.",
+            export_note: "These values are the record that would leave the device for aggregate analytics. One person's noisy record is not their true behavior. Raw keystroke intervals are not included." + memo,
             rows: rows
         };
     }
@@ -399,10 +554,13 @@
         rrProbabilities: rrProbabilities,
         randomizedResponse: randomizedResponse,
         debiasRrMean: debiasRrMean,
-        laplaceScale: laplaceScale,
-        sampleLaplace: sampleLaplace,
-        keystrokeProportionHistogram: keystrokeProportionHistogram,
+        sampleDiscreteLaplace: sampleDiscreteLaplace,
+        discreteLaplaceMechanism: discreteLaplaceMechanism,
+        oueProbabilities: oueProbabilities,
+        oueEncode: oueEncode,
         localRelease: localRelease,
+        exportForDevice: exportForDevice,
+        memoryStorage: memoryStorage,
         summarizeRelease: summarizeRelease
     };
 });

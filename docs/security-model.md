@@ -31,12 +31,17 @@ Aggregate analytics can be released under differential privacy. Individual appro
 flag, and reject decisions cannot, and this prototype does not pretend otherwise.
 
 - **Local export.** Paste, focus-paste, tab-switch, speed, and cadence predicates
-  are randomized-response bits. Paste counts, tab-switch counts, and the on-device
-  keystroke-gap histogram get Laplace noise. Raw inter-key intervals are not part
-  of that export. The default budget is ε = 1 per client, split by basic composition.
+  are permanent randomized-response bits, memoized for the UTC day. Paste counts
+  and tab-switch counts use discrete Laplace. One sampled keystroke gap uses
+  optimized unary encoding. Raw inter-key intervals are not part of that export.
+  The default budget is ε = 1 per device-day. A third transmission that day is
+  refused. Lifetime spend stops at ε = 8.
 - **Central aggregates.** A curator who already holds rows in order to score them
-  can publish noisy counts and histograms. The default budget is ε = 1 per
-  publication. Cohort size is public under the substitution neighboring relation.
+  publishes discrete-Laplace counts and histograms through a file-backed ledger.
+  The default dataset budget is ε = 1. Re-running a publication replays it.
+  A batch that does not fit charges nothing. Cohort size is public under the
+  substitution neighboring relation. Missing variance and missing tab counts
+  are an unknown bin, not a suspicious value.
 - **Decisions.** The score is an exact function of one respondent. Noise would
   change who is stopped, and publishing the decision reveals that respondent to
   whoever receives it. The guarantee on an aggregate does not cover the decision log.

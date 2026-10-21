@@ -14,4 +14,4 @@
 - `telemetry-grid`: compact display of the observable event values.
 - `score-summary-card`: routed risk state and score; its rule breakdown remains the explanation.
 - `tier-section`: groups evidence by behavioral, semantic, and footprint signal families.
-- `privacy-export`: local differential-privacy record for aggregate analytics. It states that the risk score itself is exact, lists the noisy predicates and keystroke-gap bins, and shows the basic-composition ledger. Raw keystroke intervals are not rendered.
+- `privacy-export`: local differential-privacy record for aggregate analytics. It states that the risk score itself is exact, lists the memoized randomized-response bits, discrete-Laplace counts, and keystroke OUE bits, and shows the basic-composition ledger. Raw keystroke intervals are not rendered. A repeat the same UTC day replays the stored report.

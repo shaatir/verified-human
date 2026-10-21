@@ -1,44 +1,66 @@
 #!/usr/bin/env python3
-"""Accuracy versus epsilon for Verified-Human's differential-privacy releases.
+"""Measure aggregate error against epsilon and write the evaluation note.
 
-The cohort is synthetic and fixed. Each trial redraws only the privacy noise.
-Error is against the exact aggregate on that same cohort, not against a sample.
-Per-respondent routing is scored on the raw records and does not consume noise,
-so its agreement with the non-private pipeline does not depend on epsilon.
+The cohort is fixed (seed 20261021, n = 2000). Each trial draws fresh mechanism
+noise. A device ledger would memoize a client, so this script calls each local
+mechanism once per client per trial and does not average repeats of one draw.
+Central trials use a fresh temporary ledger only as the required accountant;
+each trial is one publication, not a sequence of publications of the same cohort.
 
-Writes docs/dp-evaluation.md and prints the same tables to stdout.
+Outputs:
+  docs/dp-evaluation.md
+  docs/charts/error_vs_epsilon.svg
+  docs/charts/composition.svg
 """
 
 from __future__ import annotations
 
-import json
+import math
 import os
 import random
 import sys
-import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from src.analytics import (  # noqa: E402
-    central_dashboard_release,
-    exact_cohort_statistics,
-    synthesize_population,
+from src.analytics import exact_cohort_statistics, screen_cohort, synthesize_population
+from src.dp import (
+    CENTRAL_SHARES,
+    KEYSTROKE_BIN_EDGES_MS,
+    KEYSTROKE_BIN_LABELS,
+    LOCAL_SHARES,
+    TAB_SWITCH_CLIP,
+    advanced_composition,
+    allocate_budget,
+    basic_composition,
+    cms_debias_frequencies,
+    cms_encode,
+    debias_rr_mean,
+    discrete_laplace_mechanism,
+    hcms_debias_frequencies,
+    hcms_encode,
+    keystroke_bin_index,
+    oue_debias_mean,
+    oue_encode,
+    rdp_to_approximate,
+    randomized_response,
+    sample_keystroke_item,
+    shuffle_central_epsilon,
+    zcdp_to_approximate,
 )
-from src.dp import (  # noqa: E402
-    LOCAL_RR_QUERIES,
-    aggregate_local_releases,
-    local_contribution,
-    local_dp_release,
-)
-from src.pipeline import process_participant_screening  # noqa: E402
 
 N = 2000
-TRIALS = 30
+TRIALS = 200
+SKETCH_TRIALS = 40
 EPSILONS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 SEED = 20261021
-SMALL_COHORT_TRIALS = 200
+DELTA = 1e-6
+COMPOSITION_EPSILONS = (0.1, 1.0)
+COMPOSITION_RELEASES = (1, 2, 4, 8, 16, 32, 64, 128)
+
+CHART_DIR = os.path.join(ROOT, "docs", "charts")
+DOC_PATH = os.path.join(ROOT, "docs", "dp-evaluation.md")
 
 
 def _mean(values: list[float]) -> float:
@@ -49,291 +71,478 @@ def _l1(left: list[float], right: list[float]) -> float:
     return sum(abs(a - b) for a, b in zip(left, right))
 
 
-def _local_telemetry(person: dict) -> dict:
-    return {
-        "paste_detected": person["paste_detected"],
-        "paste_count": person["paste_count"],
-        "focus_paste_coincidence": person["focus_paste_coincidence"],
-        "tab_switches": person["tab_switches_during_form"],
-        "time_taken_seconds": person["time_taken_seconds"],
-        "typing_cadence_variance_ms": person["typing_cadence_variance_ms"],
-        "keystroke_intervals_ms": person["keystroke_intervals_ms"],
-    }
-
-
-def _local_truth(population: list[dict]) -> dict[str, object]:
-    rates = {name: [] for name in LOCAL_RR_QUERIES}
-    paste_counts: list[float] = []
-    tab_means: list[float] = []
-    histogram = [0.0, 0.0, 0.0, 0.0, 0.0]
+def _client_histogram(population: list[dict]) -> list[float]:
+    """Mean of the per-client gap distributions. One uniform gap is unbiased for this."""
+    width = len(KEYSTROKE_BIN_LABELS)
+    totals = [0.0] * width
+    unknown = len(KEYSTROKE_BIN_EDGES_MS)
     for person in population:
-        view = local_contribution(_local_telemetry(person))
-        for name in LOCAL_RR_QUERIES:
-            rates[name].append(1.0 if view[name] else 0.0)
-        paste_counts.append(float(view["paste_count"]))
-        tab_means.append(float(view["tab_switches"]))
-        for index, value in enumerate(view["histogram"]):  # type: ignore[arg-type]
-            histogram[index] += float(value)
+        intervals = person["keystroke_intervals_ms"]
+        if not intervals:
+            totals[unknown] += 1.0
+            continue
+        counts = [0] * width
+        for gap in intervals:
+            counts[keystroke_bin_index(float(gap))] += 1
+        scale = float(len(intervals))
+        for index, count in enumerate(counts):
+            totals[index] += count / scale
+    return [value / len(population) for value in totals]
+
+
+def _measure(population: list[dict], decisions: list[dict]) -> dict:
+    exact = exact_cohort_statistics(population, decisions)
     n = len(population)
+    paste = [bool(person["paste_detected"]) for person in population]
+    low_var = [float(person["typing_cadence_variance_ms"]) < 5.0 for person in population]
+    tabs = [int(person["tab_switches_during_form"]) for person in population]
+    excessive = [value > 4 for value in tabs]
+    clipped = [min(TAB_SWITCH_CLIP, max(0, value)) for value in tabs]
+    intervals = [person["keystroke_intervals_ms"] for person in population]
     return {
-        "rates": {name: _mean(values) for name, values in rates.items()},
-        "paste_count_mean": _mean(paste_counts),
-        "tab_mean": _mean(tab_means),
-        "histogram": [value / n for value in histogram],
+        "n": n,
+        "paste_rate": sum(paste) / n,
+        "low_var_rate": sum(low_var) / n,
+        "excessive_rate": sum(excessive) / n,
+        "clipped_tab_mean": sum(clipped) / n,
+        "unclipped_tab_mean": sum(tabs) / n,
+        "histogram": _client_histogram(population),
+        "paste": paste,
+        "low_var": low_var,
+        "excessive": excessive,
+        "clipped": clipped,
+        "intervals": intervals,
+        "exact": exact,
+        "routing_matches": sum(
+            decision["status"] == person["expected_status"]
+            for decision, person in zip(decisions, population)
+        ),
     }
+
+
+def _run_trials(truth: dict, rng: random.Random) -> dict[float, dict[str, float]]:
+    n = truth["n"]
+    results: dict[float, dict[str, float]] = {}
+    for epsilon in EPSILONS:
+        local = allocate_budget(epsilon, LOCAL_SHARES)
+        central = allocate_budget(epsilon, CENTRAL_SHARES)
+        paste_mae = 0.0
+        excessive_mae = 0.0
+        low_mae = 0.0
+        tab_mae = 0.0
+        hist_l1 = 0.0
+        central_paste_mae = 0.0
+        central_status_l1 = 0.0
+        central_low_mae = 0.0
+        central_excessive_mae = 0.0
+        for _ in range(TRIALS):
+            paste_bits = [
+                randomized_response(bit, local["paste_detected"], rng) for bit in truth["paste"]
+            ]
+            excessive_bits = [
+                randomized_response(bit, local["excessive_tab_switches"], rng)
+                for bit in truth["excessive"]
+            ]
+            low_bits = [
+                randomized_response(bit, local["low_cadence_variance"], rng)
+                for bit in truth["low_var"]
+            ]
+            tab_sum = 0
+            for value in truth["clipped"]:
+                tab_sum += discrete_laplace_mechanism(
+                    value, TAB_SWITCH_CLIP, local["tab_switches"], rng
+                )
+            vectors = []
+            for gaps in truth["intervals"]:
+                item = sample_keystroke_item(gaps, rng)
+                vectors.append(oue_encode(item, len(KEYSTROKE_BIN_LABELS), local["keystroke_histogram"], rng))
+            paste_mae += abs(debias_rr_mean(paste_bits, local["paste_detected"]) - truth["paste_rate"])
+            excessive_mae += abs(
+                debias_rr_mean(excessive_bits, local["excessive_tab_switches"]) - truth["excessive_rate"]
+            )
+            low_mae += abs(debias_rr_mean(low_bits, local["low_cadence_variance"]) - truth["low_var_rate"])
+            tab_mae += abs(tab_sum / n - truth["clipped_tab_mean"])
+            hist_l1 += _l1(oue_debias_mean(vectors, local["keystroke_histogram"]), truth["histogram"])
+
+            noisy_paste = discrete_laplace_mechanism(
+                int(truth["exact"]["paste_detected_count"]),
+                1,
+                central["paste_detected_count"],
+                rng,
+            )
+            noisy_low = discrete_laplace_mechanism(
+                int(truth["exact"]["low_variance_count"]),
+                1,
+                central["low_variance_count"],
+                rng,
+            )
+            noisy_excessive = discrete_laplace_mechanism(
+                int(truth["exact"]["excessive_tabs_count"]),
+                1,
+                central["excessive_tabs_count"],
+                rng,
+            )
+            status_l1 = 0.0
+            for count in truth["exact"]["status_histogram"]:
+                noisy = discrete_laplace_mechanism(int(count), 2, central["status_histogram"], rng)
+                status_l1 += abs(noisy - int(count))
+            central_paste_mae += abs(noisy_paste / n - truth["paste_rate"])
+            central_low_mae += abs(noisy_low / n - truth["low_var_rate"])
+            central_excessive_mae += abs(noisy_excessive / n - truth["excessive_rate"])
+            central_status_l1 += status_l1
+        scale = float(TRIALS)
+        results[epsilon] = {
+            "local_paste_mae": paste_mae / scale,
+            "local_excessive_mae": excessive_mae / scale,
+            "local_low_mae": low_mae / scale,
+            "local_tab_mae": tab_mae / scale,
+            "local_hist_l1": hist_l1 / scale,
+            "central_paste_mae": central_paste_mae / scale,
+            "central_low_mae": central_low_mae / scale,
+            "central_excessive_mae": central_excessive_mae / scale,
+            "central_status_l1": central_status_l1 / scale,
+        }
+    return results
+
+
+def _sketch_comparison(truth: dict, rng: random.Random) -> dict[str, float]:
+    epsilon = allocate_budget(1.0, LOCAL_SHARES)["keystroke_histogram"]
+    domain = len(KEYSTROKE_BIN_LABELS)
+    totals = {"oue": 0.0, "cms": 0.0, "hcms": 0.0}
+    for _ in range(SKETCH_TRIALS):
+        items = [sample_keystroke_item(gaps, rng) for gaps in truth["intervals"]]
+        target = [0.0] * domain
+        for item in items:
+            target[item] += 1.0
+        target = [value / truth["n"] for value in target]
+        oue = [oue_encode(item, domain, epsilon, rng) for item in items]
+        cms = [cms_encode(item, domain, epsilon, rng) for item in items]
+        hcms = [hcms_encode(item, domain, epsilon, rng) for item in items]
+        totals["oue"] += _l1(oue_debias_mean(oue, epsilon), target)
+        totals["cms"] += _l1(cms_debias_frequencies(cms, domain, epsilon), target)
+        totals["hcms"] += _l1(hcms_debias_frequencies(hcms, domain, epsilon), target)
+    return {name: value / SKETCH_TRIALS for name, value in totals.items()} | {"epsilon": epsilon}
 
 
 def _fmt(value: float) -> str:
     return f"{value:.4f}"
 
 
-def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
+def _svg_error(results: dict[float, dict[str, float]]) -> str:
+    series = [
+        ("Local paste rate", "#1f6feb", "local_paste_mae"),
+        ("Local tab mean", "#9a6700", "local_tab_mae"),
+        ("Local histogram L1", "#8250df", "local_hist_l1"),
+        ("Central paste rate", "#1a7f37", "central_paste_mae"),
+        ("Central status L1 / n", "#cf222e", "central_status_l1"),
     ]
-    for row in rows:
-        lines.append("| " + " | ".join(row) + " |")
-    return "\n".join(lines)
+    points: dict[str, list[tuple[float, float]]] = {}
+    for name, _color, key in series:
+        points[name] = []
+        for eps in EPSILONS:
+            value = results[eps][key]
+            if key == "central_status_l1":
+                value = value / N
+            points[name].append((eps, max(value, 1e-6)))
+    return _loglog_svg(
+        [(name, color, points[name]) for name, color, _key in series],
+        "Mean absolute error versus epsilon",
+        "epsilon",
+        "mean absolute error",
+    )
 
 
-def evaluate() -> str:
-    started = time.perf_counter()
-    population = synthesize_population(N, random.Random(SEED))
-    truth = _local_truth(population)
-    decisions = []
-    routing_hits = 0
-    for person in population:
-        decision = process_participant_screening(person)
-        decisions.append(decision)
-        if decision["status"] == person["expected_status"]:
-            routing_hits += 1
-    routing_agreement = routing_hits / len(population)
-    exact = exact_cohort_statistics(population, decisions)
+def _loglog_svg(series: list[tuple[str, str, list[tuple[float, float]]]], title: str, xlabel: str, ylabel: str) -> str:
+    width, height = 780, 520
+    left, right, top, bottom = 78, 24, 46, 108
+    xs = [math.log10(x) for _name, _color, pts in series for x, _y in pts]
+    ys = [math.log10(y) for _name, _color, pts in series for _x, y in pts]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    pad_x = (max_x - min_x) * 0.08 or 0.1
+    pad_y = (max_y - min_y) * 0.12 or 0.1
+    min_x -= pad_x
+    max_x += pad_x
+    min_y -= pad_y
+    max_y += pad_y
 
-    local_rows: list[dict[str, float]] = []
-    central_rows: list[dict[str, float]] = []
-    bias_at_one: dict[str, float] = {}
+    def xy(x: float, y: float) -> tuple[float, float]:
+        px = left + (math.log10(x) - min_x) / (max_x - min_x) * (width - left - right)
+        py = top + (max_y - math.log10(y)) / (max_y - min_y) * (height - top - bottom)
+        return px, py
 
-    for epsilon_index, epsilon in enumerate(EPSILONS):
-        local_abs = {
-            "paste": [],
-            "tabs_flag": [],
-            "low_var": [],
-            "tab_mean": [],
-            "hist": [],
-        }
-        local_signed = {key: [] for key in local_abs}
-        central_abs = {"status_l1": [], "paste": [], "paste_rate": []}
-        central_signed = {"paste": []}
-
-        for trial in range(TRIALS):
-            rng = random.Random(SEED + 10007 * epsilon_index + trial)
-            releases = [
-                local_dp_release(_local_telemetry(person), epsilon=epsilon, rng=rng)
-                for person in population
-            ]
-            aggregate = aggregate_local_releases(releases)
-            rates = aggregate["randomized_response_rates"]
-            paste_error = float(rates["paste_detected"]["debiased_rate"]) - float(truth["rates"]["paste_detected"])  # type: ignore[index]
-            tab_flag_error = (
-                float(rates["excessive_tab_switches"]["debiased_rate"])
-                - float(truth["rates"]["excessive_tab_switches"])  # type: ignore[index]
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<text x="{width / 2}" y="28" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="16">{title}</text>',
+    ]
+    for decade in (0.25, 0.5, 1, 2, 4, 8):
+        if min_x <= math.log10(decade) <= max_x:
+            px, _ = xy(decade, 10 ** min_y)
+            parts.append(f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{height - bottom}" stroke="#eaeef2"/>')
+            parts.append(
+                f'<text x="{px:.1f}" y="{height - bottom + 18}" text-anchor="middle" font-size="11" font-family="ui-sans-serif, sans-serif" fill="#57606a">{decade:g}</text>'
             )
-            low_var_error = (
-                float(rates["low_cadence_variance"]["debiased_rate"])
-                - float(truth["rates"]["low_cadence_variance"])  # type: ignore[index]
+    y_ticks = _log_ticks(10 ** min_y, 10 ** max_y)
+    for tick in y_ticks:
+        if min_y <= math.log10(tick) <= max_y:
+            _, py = xy(10 ** min_x, tick)
+            parts.append(f'<line x1="{left}" y1="{py:.1f}" x2="{width - right}" y2="{py:.1f}" stroke="#eaeef2"/>')
+            parts.append(
+                f'<text x="{left - 8}" y="{py + 4:.1f}" text-anchor="end" font-size="11" font-family="ui-sans-serif, sans-serif" fill="#57606a">{tick:g}</text>'
             )
-            tab_mean_error = float(aggregate["laplace_means"]["tab_switches"]) - float(truth["tab_mean"])  # type: ignore[arg-type]
-            hist_error = _l1(
-                list(aggregate["keystroke_histogram_mean"]),  # type: ignore[arg-type]
-                list(truth["histogram"]),  # type: ignore[arg-type]
-            )
-            local_signed["paste"].append(paste_error)
-            local_signed["tabs_flag"].append(tab_flag_error)
-            local_signed["low_var"].append(low_var_error)
-            local_signed["tab_mean"].append(tab_mean_error)
-            local_abs["paste"].append(abs(paste_error))
-            local_abs["tabs_flag"].append(abs(tab_flag_error))
-            local_abs["low_var"].append(abs(low_var_error))
-            local_abs["tab_mean"].append(abs(tab_mean_error))
-            local_abs["hist"].append(hist_error)
-
-            release = central_dashboard_release(
-                population, epsilon=epsilon, rng=rng, decisions=decisions
-            )
-            stats = release["statistics"]
-            status_l1 = _l1(
-                list(stats["status_histogram"]["noisy"]),  # type: ignore[index]
-                [float(value) for value in exact["status_histogram"]],  # type: ignore[arg-type]
-            )
-            paste_error_central = float(stats["paste_detected_count"]["noisy"]) - float(exact["paste_detected_count"])  # type: ignore[arg-type]
-            central_abs["status_l1"].append(status_l1)
-            central_abs["paste"].append(abs(paste_error_central))
-            central_abs["paste_rate"].append(abs(paste_error_central) / N)
-            central_signed["paste"].append(paste_error_central)
-
-        local_rows.append({
-            "epsilon": epsilon,
-            "paste": _mean(local_abs["paste"]),
-            "tabs_flag": _mean(local_abs["tabs_flag"]),
-            "low_var": _mean(local_abs["low_var"]),
-            "tab_mean": _mean(local_abs["tab_mean"]),
-            "hist": _mean(local_abs["hist"]),
-        })
-        central_rows.append({
-            "epsilon": epsilon,
-            "status_l1": _mean(central_abs["status_l1"]),
-            "paste": _mean(central_abs["paste"]),
-            "paste_rate": _mean(central_abs["paste_rate"]),
-        })
-        if epsilon == 1.0:
-            bias_at_one = {
-                "local_paste": _mean(local_signed["paste"]),
-                "local_tabs_flag": _mean(local_signed["tabs_flag"]),
-                "local_low_var": _mean(local_signed["low_var"]),
-                "local_tab_mean": _mean(local_signed["tab_mean"]),
-                "central_paste": _mean(central_signed["paste"]),
-            }
-
-    with open(os.path.join(ROOT, "data", "participants_mock.json"), encoding="utf-8") as handle:
-        mock = json.load(handle)
-    mock_exact = exact_cohort_statistics(mock)
-    mock_l1 = []
-    mock_rng = random.Random(SEED + 99)
-    for _ in range(SMALL_COHORT_TRIALS):
-        release = central_dashboard_release(mock, epsilon=1.0, rng=mock_rng)
-        mock_l1.append(
-            _l1(
-                list(release["statistics"]["status_histogram"]["noisy"]),  # type: ignore[index]
-                [float(value) for value in mock_exact["status_histogram"]],  # type: ignore[arg-type]
-            )
+        parts.append(
+            f'<text x="{width / 2}" y="{height - bottom + 36}" text-anchor="middle" font-size="12" font-family="ui-sans-serif, sans-serif">{xlabel} (log)</text>'
         )
-    mock_status_l1 = _mean(mock_l1)
-
-    elapsed = time.perf_counter() - started
-    at_one_local = next(row for row in local_rows if row["epsilon"] == 1.0)
-    at_one_central = next(row for row in central_rows if row["epsilon"] == 1.0)
-
-    local_table = _markdown_table(
-        [
-            "ε",
-            "Paste rate MAE",
-            "Excessive-tab rate MAE",
-            "Low-variance rate MAE",
-            "Mean tab switches MAE",
-            "Keystroke histogram L1",
-        ],
-        [
-            [
-                _fmt(row["epsilon"]),
-                _fmt(row["paste"]),
-                _fmt(row["tabs_flag"]),
-                _fmt(row["low_var"]),
-                _fmt(row["tab_mean"]),
-                _fmt(row["hist"]),
-            ]
-            for row in local_rows
-        ],
+    parts.append(
+        f'<text x="18" y="{height / 2}" text-anchor="middle" font-size="12" font-family="ui-sans-serif, sans-serif" transform="rotate(-90 18 {height / 2})">{ylabel} (log)</text>'
     )
-    central_table = _markdown_table(
-        ["ε", "Status histogram L1", "Paste count MAE", "Paste rate MAE"],
-        [
-            [
-                _fmt(row["epsilon"]),
-                _fmt(row["status_l1"]),
-                _fmt(row["paste"]),
-                _fmt(row["paste_rate"]),
-            ]
-            for row in central_rows
-        ],
+    for index, (name, color, pts) in enumerate(series):
+        path = " ".join(
+            ("M" if i == 0 else "L") + f"{xy(x, y)[0]:.1f},{xy(x, y)[1]:.1f}" for i, (x, y) in enumerate(pts)
+        )
+        parts.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>')
+        for x, y in pts:
+            px, py = xy(x, y)
+            parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3" fill="{color}"/>')
+        column = index % 3
+        row = index // 3
+        legend_x = 90 + column * 220
+        legend_y = height - 36 + row * 18
+        parts.append(f'<rect x="{legend_x}" y="{legend_y - 9}" width="12" height="12" fill="{color}"/>')
+        parts.append(
+            f'<text x="{legend_x + 18}" y="{legend_y}" font-size="12" font-family="ui-sans-serif, sans-serif">{name}</text>'
+        )
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def _log_ticks(low: float, high: float) -> list[float]:
+    ticks = []
+    decade = 10 ** math.floor(math.log10(low))
+    while decade <= high * 1.01:
+        for factor in (1, 2, 5):
+            tick = decade * factor
+            if low / 1.2 <= tick <= high * 1.2:
+                ticks.append(tick)
+        decade *= 10
+    return ticks
+
+
+def _svg_composition() -> str:
+    width, height = 920, 460
+    panels = []
+    for epsilon in COMPOSITION_EPSILONS:
+        curves = {
+            "basic": [basic_composition(k, epsilon) for k in COMPOSITION_RELEASES],
+            "advanced": [advanced_composition(k, epsilon, DELTA) for k in COMPOSITION_RELEASES],
+            "zCDP": [zcdp_to_approximate(k, epsilon, DELTA) for k in COMPOSITION_RELEASES],
+            "RDP": [rdp_to_approximate(k, epsilon, DELTA) for k in COMPOSITION_RELEASES],
+        }
+        panels.append((epsilon, curves))
+    colors = {"basic": "#1f6feb", "advanced": "#cf222e", "zCDP": "#1a7f37", "RDP": "#8250df"}
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<text x="460" y="26" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="16">'
+        f'Generic composition bounds, δ = {DELTA:g}</text>',
+    ]
+    panel_width = 430
+    for panel_index, (epsilon, curves) in enumerate(panels):
+        origin_x = 50 + panel_index * 460
+        top, bottom = 58, 48
+        plot_w, plot_h = panel_width - 70, height - top - bottom
+        max_y = max(max(values) for values in curves.values()) * 1.08
+        last_index = max(1, len(COMPOSITION_RELEASES) - 1)
+
+        def xy(index: int, value: float) -> tuple[float, float]:
+            px = origin_x + (index / last_index) * plot_w
+            py = top + (1 - value / max_y) * plot_h
+            return px, py
+
+        parts.append(
+            f'<text x="{origin_x + plot_w / 2}" y="48" text-anchor="middle" font-size="13" font-family="ui-sans-serif, sans-serif">per-release ε = {epsilon:g}</text>'
+        )
+        for index, k in enumerate(COMPOSITION_RELEASES):
+            px, _ = xy(index, 0)
+            parts.append(f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{height - bottom}" stroke="#eaeef2"/>')
+            parts.append(
+                f'<text x="{px:.1f}" y="{height - bottom + 16}" text-anchor="middle" font-size="10" font-family="ui-sans-serif, sans-serif" fill="#57606a">{k}</text>'
+            )
+        for name, values in curves.items():
+            path = " ".join(
+                ("M" if i == 0 else "L") + f"{xy(i, value)[0]:.1f},{xy(i, value)[1]:.1f}"
+                for i, value in enumerate(values)
+            )
+            parts.append(f'<path d="{path}" fill="none" stroke="{colors[name]}" stroke-width="2"/>')
+        if panel_index == 0:
+            for index, name in enumerate(curves):
+                y = top + 16 + index * 16
+                parts.append(f'<rect x="{origin_x + 8}" y="{y - 9}" width="12" height="12" fill="{colors[name]}"/>')
+                parts.append(
+                    f'<text x="{origin_x + 24}" y="{y}" font-size="12" font-family="ui-sans-serif, sans-serif">{name}</text>'
+                )
+    parts.append(
+        '<text x="460" y="448" text-anchor="middle" font-size="12" font-family="ui-sans-serif, sans-serif">number of releases k</text>'
     )
-    bias_table = _markdown_table(
-        ["Estimator at ε = 1", "Mean signed error"],
-        [
-            ["Local paste rate", _fmt(bias_at_one["local_paste"])],
-            ["Local excessive-tab rate", _fmt(bias_at_one["local_tabs_flag"])],
-            ["Local low-variance rate", _fmt(bias_at_one["local_low_var"])],
-            ["Local mean tab switches", _fmt(bias_at_one["local_tab_mean"])],
-            ["Central paste count", _fmt(bias_at_one["central_paste"])],
-        ],
-    )
+    parts.append("</svg>")
+    return "\n".join(parts)
 
-    role_counts: dict[str, int] = {}
-    for person in population:
-        role_counts[str(person["role"])] = role_counts.get(str(person["role"]), 0) + 1
 
-    document = f"""# Differential privacy evaluation
+def _composition_rows() -> list[str]:
+    rows = [
+        "| k | per-release ε | basic | advanced | zCDP | RDP |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for epsilon in COMPOSITION_EPSILONS:
+        for k in COMPOSITION_RELEASES:
+            rows.append(
+                "| {k} | {eps:g} | {basic} | {advanced} | {zcdp} | {rdp} |".format(
+                    k=k,
+                    eps=epsilon,
+                    basic=_fmt(basic_composition(k, epsilon)),
+                    advanced=_fmt(advanced_composition(k, epsilon, DELTA)),
+                    zcdp=_fmt(zcdp_to_approximate(k, epsilon, DELTA)),
+                    rdp=_fmt(rdp_to_approximate(k, epsilon, DELTA)),
+                )
+            )
+    return rows
 
-Accuracy of the aggregate releases as ε changes. This is not a classifier
-accuracy. Individual fraud routing does not read the noisy values, so it stays
-aligned with the non-private pipeline at every ε.
 
-Re-run the measurement with:
-
-```bash
-python3 scripts/eval_dp_tradeoff.py
-```
-
-## Setup
-
-- Cohort: {N} synthetic respondents, seed {SEED}.
-- Mix: {role_counts.get("legit", 0)} human, {role_counts.get("bot", 0)} scripted bot, {role_counts.get("llm", 0)} LLM-assisted, {role_counts.get("borderline", 0)} borderline.
-- Trials per ε: {TRIALS}. Only the privacy noise is redrawn. The cohort is fixed.
-- ε grid: {", ".join(str(value) for value in EPSILONS)}. The same total is split by the default budget shares in `src/dp.py`.
-- Local randomized-response error is the mean absolute error of the debiased rate against the true predicate rate.
-- Local Laplace error is against the clipped contribution (paste counts are clipped to 5 and tab switches to 10 before noise). The synthetic draws sit inside those clips, so clipping bias is zero here.
-- The keystroke figure is the L1 distance between the average noisy per-client histogram and the average true histogram. Empty clients would contribute the zero vector; every synthetic client types.
-- Central error uses the unclamped Laplace answers, which are unbiased. The dashboard's published copy clamps negatives at zero. That clamp is post-processing: it stays ε-DP and it adds a little bias on tiny counts.
-- Per-respondent routing agreement with the non-private pipeline on this cohort: **{routing_agreement:.0%}** ({routing_hits} / {N}). That figure does not move with ε.
-
-## Local DP
-
-Each client adds their own noise. Averaging {N} clients is what makes the estimates usable. A single export is not a meaningful reading of that person.
-
-{local_table}
-
-At the default local budget **ε = 1**, mean absolute error is about **{_fmt(at_one_local["paste"])}** on the paste rate, **{_fmt(at_one_local["tabs_flag"])}** on the excessive-tab rate, **{_fmt(at_one_local["low_var"])}** on the low-variance rate, **{_fmt(at_one_local["tab_mean"])}** tab switches on the mean, and **{_fmt(at_one_local["hist"])}** L1 on the cadence histogram.
-
-The boolean rates are the local statistics you can actually use at this budget. Paste detection receives 25% of ε, so that bit is released at ε = 0.25. The true paste rate on this cohort is **{_fmt(float(truth["rates"]["paste_detected"]))}**, and the MAE above is the absolute error around it. The magnitude queries are noisier than a quick 1/n argument suggests. Tab switches are clipped at 10, so the local sensitivity is 10, and that query receives only 10% of the budget. The Laplace scale is therefore 100. Averaging independent local noise shrinks error as `1/sqrt(n)`, not `1/n`: the standard deviation of the mean is `scale * sqrt(2/n)`, about 3.2 tab switches here, and the measured MAE is {_fmt(at_one_local["tab_mean"])}. The true mean of clipped tab switches is **{_fmt(float(truth["tab_mean"]))}**, so ε = 1 does not resolve it. The histogram has the same shape of problem. L1 sensitivity 2 and a 10% budget share set the per-bin scale to 20, and the average histogram's L1 error ({_fmt(at_one_local["hist"])}) is larger than a distribution that sums to 1.
-
-Raising the total ε moves every column down. By ε = 8 the mean tab error is about 0.32 and the histogram L1 is about 0.35, small enough to see the shape. That spend is a product choice, and the accountant is where it gets written down. It is also why the same question, asked once at the curator under central DP, is so much more accurate at ε = 1.
-
-## Central DP
-
-The curator holds the rows, scores them exactly, and noises each published query once. Substitution sensitivity is 1 for a boolean count and 2 for a histogram that puts each person in one bin.
-
-{central_table}
-
-At the default central budget **ε = 1**, the status histogram's mean L1 error is about **{_fmt(at_one_central["status_l1"])}** people out of {N} (paste-rate MAE **{_fmt(at_one_central["paste_rate"])}**). The same ε buys a much smaller error than local DP because the noise is added once, not once per client.
-
-On the four-person mock cohort the same ε = 1 status release has mean L1 error **{_fmt(mock_status_l1)}** across {SMALL_COHORT_TRIALS} trials. That is larger than the cohort. The CLI analytics view of the mock data demonstrates the mechanism; it is not a prevalence estimate. Central DP on a handful of rows is honest noise, not a precise dashboard.
-
-## Bias check
-
-Mean signed error at ε = 1. A debiased randomized-response rate and an unclamped Laplace query are unbiased, so these averages should sit near zero. Thirty trials still leave scatter: the local tab-switch mean has a per-trial standard deviation near 3, and the central paste count near 9, so a signed error of a few tenths is Monte Carlo noise rather than a bias in the estimator.
-
-{bias_table}
-
-## How to read this in an interview
-
-- Local DP protects the client from the collector. Utility is an average over many clients. One record is supposed to look wrong.
-- Central DP protects a published aggregate from someone who does not also get the microdata or the decision log. It is the higher-utility choice when the curator must already hold the rows in order to approve or reject.
-- ε = 1 is the default on both paths. The tables are the reason a product might spend more, and the accountant is where that spend is written down.
-- Routing accuracy is not on these curves. Changing ε does not change who is flagged.
-
-Runtime of this script on the machine that generated the tables: {elapsed:.1f}s.
-"""
-    return document
+def _write_doc(truth: dict, results: dict[float, dict[str, float]], sketches: dict[str, float], shuffle: float | None) -> None:
+    at_one = results[1.0]
+    lines = [
+        "# Differential privacy evaluation",
+        "",
+        f"Synthetic cohort of {N} respondents, seed `{SEED}`, {TRIALS} independent noise trials.",
+        "Per-respondent routing agreed with the labeled role on "
+        f"**{truth['routing_matches']} / {N}** records. The scorer does not read the noisy values, so that agreement does not depend on epsilon.",
+        "",
+        "Each local trial draws the mechanism once per client. A device ledger would store that draw for the UTC day and replay it. Repeats are not averaged here, because averaging memoized answers would not remove noise and averaging fresh draws would.",
+        "",
+        "Central trials are separate single publications. They are not sequential spends of one dataset ledger. The default dataset budget is ε = 1, so one dashboard publication exhausts it and a rerun replays the stored integers.",
+        "",
+        "Error on a mean of n local reports falls like `1/sqrt(n)`, not `1/n`. Discrete Laplace on a clipped integer has variance `2(1-p)/p²` with `p = 1 - exp(-ε/Δ)`. The standard deviation of the mean is that standard deviation divided by `sqrt(n)`.",
+        "",
+        "## Accuracy versus epsilon",
+        "",
+        "Local tab error is against the mean after clipping to `[0, 4]`. "
+        f"The clipped mean is **{_fmt(truth['clipped_tab_mean'])}**. "
+        f"The unclipped mean is **{_fmt(truth['unclipped_tab_mean'])}**. "
+        "Values above the clip, including the synthetic LLM and borderline tab counts, are biased downward on purpose so the sensitivity stays finite.",
+        "",
+        f"True paste rate **{_fmt(truth['paste_rate'])}**, excessive-tab rate **{_fmt(truth['excessive_rate'])}**, low-variance rate **{_fmt(truth['low_var_rate'])}**.",
+        "",
+        "| ε | local paste MAE | local excessive-tab MAE | local low-variance MAE | local tab MAE | local histogram L1 | central paste MAE | central status L1 |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for epsilon in EPSILONS:
+        row = results[epsilon]
+        lines.append(
+            f"| {epsilon:g} | {_fmt(row['local_paste_mae'])} | {_fmt(row['local_excessive_mae'])} | "
+            f"{_fmt(row['local_low_mae'])} | {_fmt(row['local_tab_mae'])} | {_fmt(row['local_hist_l1'])} | "
+            f"{_fmt(row['central_paste_mae'])} | {_fmt(row['central_status_l1'])} |"
+        )
+    lines.extend([
+        "",
+        "![Error versus epsilon](charts/error_vs_epsilon.svg)",
+        "",
+        "The chart is log-log. Central status error is plotted as L1 divided by cohort size so it shares an axis with the rates. The table keeps the L1 in people.",
+        "",
+        f"At the default ε = 1 the local paste MAE is **{_fmt(at_one['local_paste_mae'])}**, "
+        f"the clipped tab-switch MAE is **{_fmt(at_one['local_tab_mae'])}**, "
+        f"and the keystroke histogram L1 is **{_fmt(at_one['local_hist_l1'])}**. "
+        f"Central paste-rate MAE is **{_fmt(at_one['central_paste_mae'])}** and the status histogram L1 is **{_fmt(at_one['central_status_l1'])}** people.",
+        "",
+        "## Histogram mechanisms",
+        "",
+        "The release uses optimized unary encoding (Wang, Zheng, Wu, Zhao, USENIX Security 2017) on four bins: `[0, 80)`, `[80, 250)`, `[250, ∞)`, and `unknown`. One uniformly sampled gap per client. No gaps is the unknown bin. The estimand is the mean of the per-client distributions.",
+        "",
+        f"Count-mean sketch and Hadamard count-mean sketch (Apple, Learning with Privacy at Scale) are a benchmark at the histogram's share of ε = 1, which is ε = {_fmt(sketches['epsilon'])}. "
+        f"{SKETCH_TRIALS} trials, same sampled items, error against that empirical one-hot mean:",
+        "",
+        "| mechanism | L1 |",
+        "| --- | ---: |",
+        f"| OUE (the release) | {_fmt(sketches['oue'])} |",
+        f"| CMS, width 32, depth 8 | {_fmt(sketches['cms'])} |",
+        f"| HCMS, width 8 | {_fmt(sketches['hcms'])} |",
+        "",
+        "CMS lands next to OUE. HCMS is worse: a Hadamard row is a compression step for a large domain, and four bins do not need it. The release stays OUE.",
+        "",
+        "## Composition",
+        "",
+        "These are generic bounds for composing pure ε-DP mechanisms. They are not a privacy-loss distribution of discrete Laplace. δ = 1e-6.",
+        "",
+        "Basic composition is `kε`. Advanced composition (Dwork, Rothblum, Vadhan) is `sqrt(2 k ln(1/δ)) ε + k ε (e^ε - 1)`. "
+        "At ε = 1 that bound is looser than basic composition, including at k = 1. "
+        "zCDP (Bun, Steinke) uses ρ = ε²/2 per release. RDP uses the same pure-DP curve, (α, α ε²/2), minimized over α. "
+        "When the per-release epsilon is small, zCDP and RDP beat basic composition as k grows. The dataset ledger still records basic composition, which is valid at the default ε = 1 and does not depend on a δ.",
+        "",
+        *_composition_rows(),
+        "",
+        "![Composition bounds](charts/composition.svg)",
+        "",
+        "## Amplification by shuffling",
+        "",
+        "This repository does not shuffle reports. The bound below is what Theorem 5.3 of Balle, Bell, Gascón, and Nissim (CRYPTO 2019, The Privacy Blanket of the Shuffle Model) proves for a shuffled batch of n ε-local reports, with C = 1 - e^{-2}. It is an upper bound on a central epsilon, solved numerically. It is not a property of the server.",
+        "",
+    ])
+    if shuffle is None:
+        lines.append(
+            f"For the composed local report at ε = 1, n = {N}, δ = {DELTA:g}, the bound does not prove a central epsilon at most 1."
+        )
+    else:
+        lines.append(
+            f"For the composed local report at ε = 1, n = {N}, δ = {DELTA:g}, the numeric bound is central **ε ≤ {_fmt(shuffle)}**."
+        )
+    lines.extend([
+        "",
+        "The whole local report is one ε-local message under basic composition of its queries, so the local epsilon in the formula is 1, not the share of a single predicate.",
+        "",
+        "## Mechanisms and the float issue",
+        "",
+        "Integer counts use discrete Laplace: the difference of two geometric random variables, added to the integer query with integer arithmetic. "
+        "Sampling continuous Laplace noise in floating point and adding it to a secret does not implement the Laplace mechanism. "
+        "The gaps between representable values depend on the magnitude of the secret, so the likelihood ratio can be infinite (Mironov, 2012). "
+        "A single 32-bit uniform through the inverse CDF makes the support finite as well. This code does not do that.",
+        "",
+        "Missing time, missing variance, and a missing tab count are unknown. In the local predicates they are not treated as fast, low-variance, or excessive. "
+        "In the central histograms they fall in an explicit unknown bin. The exact fraud scorer still uses its own defaults and can flag a missing field. Those paths are different on purpose.",
+        "",
+    ])
+    os.makedirs(os.path.dirname(DOC_PATH), exist_ok=True)
+    with open(DOC_PATH, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
 
 
 def main() -> None:
-    document = evaluate()
-    destination = os.path.join(ROOT, "docs", "dp-evaluation.md")
-    with open(destination, "w", encoding="utf-8") as handle:
-        handle.write(document)
-    sys.stdout.write(document)
-    sys.stdout.write(f"\nWrote {destination}\n")
+    rng = random.Random(SEED)
+    population = synthesize_population(N, rng)
+    decisions = screen_cohort(population)
+    truth = _measure(population, decisions)
+    # The truth measurement consumed `rng` only for synthesis. Restart the noise stream
+    # from a fixed offset so the tables do not depend on how many random calls synthesis used.
+    noise = random.Random(SEED + 1)
+    results = _run_trials(truth, noise)
+    sketches = _sketch_comparison(truth, random.Random(SEED + 2))
+    shuffle = shuffle_central_epsilon(1.0, N, DELTA)
+    os.makedirs(CHART_DIR, exist_ok=True)
+    with open(os.path.join(CHART_DIR, "error_vs_epsilon.svg"), "w", encoding="utf-8") as handle:
+        handle.write(_svg_error(results))
+    with open(os.path.join(CHART_DIR, "composition.svg"), "w", encoding="utf-8") as handle:
+        handle.write(_svg_composition())
+    _write_doc(truth, results, sketches, shuffle)
+    at_one = results[1.0]
+    print(
+        f"eps=1 local paste {_fmt(at_one['local_paste_mae'])} "
+        f"tabs {_fmt(at_one['local_tab_mae'])} hist {_fmt(at_one['local_hist_l1'])} "
+        f"central paste {_fmt(at_one['central_paste_mae'])} status L1 {_fmt(at_one['central_status_l1'])}"
+    )
+    print(
+        f"sketch oue {_fmt(sketches['oue'])} cms {_fmt(sketches['cms'])} hcms {_fmt(sketches['hcms'])} "
+        f"shuffle {shuffle}"
+    )
+    print(f"wrote {DOC_PATH}")
 
 
 if __name__ == "__main__":

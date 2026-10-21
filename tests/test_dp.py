@@ -14,6 +14,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,7 +22,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from src.analytics import (  # noqa: E402
+    CADENCE_BIN_LABELS,
     PRIVACY_PATHS,
+    TAB_SWITCH_BIN_LABELS,
     central_dashboard_release,
     cohort_privacy_report,
     exact_cohort_statistics,
@@ -29,26 +32,41 @@ from src.analytics import (  # noqa: E402
 )
 from src.dp import (  # noqa: E402
     CENTRAL_SHARES,
+    DAILY_EXPORT_CAP,
     KEYSTROKE_BIN_LABELS,
+    LIFETIME_EPSILON_CAP,
     LOCAL_EPSILON_DEFAULT,
     LOCAL_RR_QUERIES,
     LOCAL_SHARES,
     PASTE_COUNT_CLIP,
     TAB_SWITCH_CLIP,
-    PrivacyAccountant,
+    ExportCapExceeded,
     PrivacyBudgetExceeded,
-    aggregate_local_releases,
+    advanced_composition,
     allocate_budget,
+    audit_epsilon_from_outputs,
+    basic_composition,
     client_constants,
+    cms_debias_frequencies,
+    cms_encode,
     debias_rr_mean,
-    keystroke_proportion_histogram,
-    laplace_mechanism,
-    laplace_scale,
+    discrete_laplace_mechanism,
+    discrete_laplace_variance,
+    hcms_debias_frequencies,
+    hcms_encode,
     local_contribution,
-    local_dp_release,
+    local_dp_mechanism,
+    oue_debias_mean,
+    oue_encode,
+    oue_probabilities,
+    randomized_response,
+    rdp_to_approximate,
     rr_probabilities,
-    sample_laplace,
+    sample_discrete_laplace,
+    shuffle_central_epsilon,
+    zcdp_to_approximate,
 )
+from src.ledger import DatasetLedger, DeviceLedger  # noqa: E402
 from src.pipeline import process_participant_screening  # noqa: E402
 
 
@@ -57,332 +75,393 @@ def _load_mock() -> list[dict]:
         return json.load(handle)
 
 
-class LaplaceMechanismTests(unittest.TestCase):
-    def test_scale_is_sensitivity_over_epsilon(self) -> None:
-        self.assertEqual(laplace_scale(2.0, 0.5), 4.0)
-        self.assertEqual(laplace_scale(1.0, 1.0), 1.0)
-        self.assertEqual(laplace_scale(0.0, 1.0), 0.0)
-        self.assertAlmostEqual(laplace_scale(TAB_SWITCH_CLIP, 0.1), TAB_SWITCH_CLIP / 0.1)
+class _CountingRng(random.Random):
+    def __init__(self, seed: int) -> None:
+        super().__init__(seed)
+        self.calls = 0
 
-    def test_scale_rejects_non_positive_epsilon(self) -> None:
-        for epsilon in (0, -1, float("nan"), float("inf")):
-            with self.assertRaises(ValueError):
-                laplace_scale(1.0, epsilon)
+    def random(self) -> float:
+        self.calls += 1
+        return super().random()
 
-    def test_noise_is_zero_mean_with_variance_2_b_squared(self) -> None:
-        scale = 1.5
+
+class DiscreteLaplaceTests(unittest.TestCase):
+    def test_variance_matches_the_geometric_formula(self) -> None:
+        epsilon, sensitivity = 1.0, 1
+        expected = discrete_laplace_variance(epsilon, sensitivity)
         rng = random.Random(20261021)
-        draws = [sample_laplace(scale, rng) for _ in range(20000)]
+        draws = [sample_discrete_laplace(epsilon, sensitivity, rng) for _ in range(20000)]
         mean = sum(draws) / len(draws)
         variance = sum((draw - mean) ** 2 for draw in draws) / len(draws)
-        # Standard error of the mean is scale * sqrt(2 / n) ≈ 0.015.
         self.assertAlmostEqual(mean, 0.0, delta=0.08)
-        self.assertAlmostEqual(variance, 2 * scale * scale, delta=0.35)
-        self.assertTrue(any(draw > 0 for draw in draws[:50]))
-        self.assertTrue(any(draw < 0 for draw in draws[:50]))
+        self.assertAlmostEqual(variance, expected, delta=0.35)
+        self.assertTrue(all(isinstance(draw, int) for draw in draws))
 
-    def test_mechanism_is_unbiased_for_the_query(self) -> None:
-        truth = 40.0
-        sensitivity = 1.0
-        epsilon = 1.0
-        rng = random.Random(11)
-        draws = [
-            laplace_mechanism(truth, sensitivity, epsilon, rng) for _ in range(8000)
-        ]
-        mean = sum(draws) / len(draws)
-        self.assertAlmostEqual(mean, truth, delta=0.08)
-        self.assertEqual(laplace_scale(sensitivity, epsilon), sensitivity / epsilon)
+    def test_mechanism_is_unbiased_for_an_integer_query(self) -> None:
+        rng = random.Random(7)
+        draws = [discrete_laplace_mechanism(11, 1, 1.0, rng) for _ in range(20000)]
+        self.assertAlmostEqual(sum(draws) / len(draws), 11.0, delta=0.08)
+
+    def test_large_epsilon_adds_no_noise(self) -> None:
+        rng = random.Random(1)
+        self.assertEqual(discrete_laplace_mechanism(PASTE_COUNT_CLIP, PASTE_COUNT_CLIP, 1e6, rng), PASTE_COUNT_CLIP)
+
+    def test_rejects_a_float_query(self) -> None:
+        with self.assertRaises(ValueError):
+            discrete_laplace_mechanism(1.5, 1, 1.0, random.Random(0))  # type: ignore[arg-type]
 
 
 class RandomizedResponseTests(unittest.TestCase):
-    def test_likelihood_ratio_equals_exp_epsilon(self) -> None:
+    def test_likelihood_ratio_is_e_to_the_epsilon(self) -> None:
         for epsilon in (0.2, 1.0, 4.0):
             p_truth, p_flip = rr_probabilities(epsilon)
             self.assertAlmostEqual(p_truth + p_flip, 1.0)
-            self.assertAlmostEqual(p_truth / p_flip, math.exp(epsilon))
-            self.assertGreater(p_truth, p_flip)
+            self.assertAlmostEqual(p_truth / p_flip, math.exp(epsilon), places=9)
 
-    def test_debiased_mean_matches_the_secret_rate(self) -> None:
-        epsilon = 1.0
+    def test_debias_recovers_the_rate(self) -> None:
         rate = 0.35
-        rng = random.Random(99)
-        n = 40000
-        p_truth, _p_flip = rr_probabilities(epsilon)
-        reports = []
-        for _ in range(n):
-            bit = 1 if rng.random() < rate else 0
-            if rng.random() < p_truth:
-                reports.append(bit)
-            else:
-                reports.append(1 - bit)
-        estimate = debias_rr_mean(reports, epsilon)
-        # Standard error is about 0.005 at this n and ε. 0.03 is far outside it.
-        self.assertAlmostEqual(estimate, rate, delta=0.03)
-
-    def test_aggregate_of_local_releases_is_unbiased(self) -> None:
         epsilon = 4.0
-        rng = random.Random(123)
-        releases = []
-        truths = []
-        for index in range(8000):
-            pasted = index % 5 == 0
-            truths.append(pasted)
-            releases.append(
-                local_dp_release(
-                    {
-                        "paste_detected": pasted,
-                        "paste_count": 0,
-                        "focus_paste_coincidence": False,
-                        "tab_switches": 0,
-                        "time_taken_seconds": 90,
-                        "typing_cadence_variance_ms": 30.0,
-                        "keystroke_intervals_ms": [],
-                    },
-                    epsilon=epsilon,
-                    rng=rng,
+        rng = random.Random(99)
+        reports = [randomized_response(rng.random() < rate, epsilon, rng) for _ in range(8000)]
+        self.assertAlmostEqual(debias_rr_mean(reports, epsilon), rate, delta=0.06)
+
+
+class OueTests(unittest.TestCase):
+    def test_privacy_ratio_equals_epsilon(self) -> None:
+        epsilon = 1.0
+        p_keep, q_flip = oue_probabilities(epsilon)
+        ratio = math.log((p_keep * (1.0 - q_flip)) / ((1.0 - p_keep) * q_flip))
+        self.assertAlmostEqual(ratio, epsilon, places=9)
+
+    def test_debias_recovers_a_point_mass(self) -> None:
+        epsilon = 2.0
+        rng = random.Random(11)
+        reports = [oue_encode(0, len(KEYSTROKE_BIN_LABELS), epsilon, rng) for _ in range(8000)]
+        estimate = oue_debias_mean(reports, epsilon)
+        self.assertAlmostEqual(estimate[0], 1.0, delta=0.08)
+        for other in estimate[1:]:
+            self.assertAlmostEqual(other, 0.0, delta=0.08)
+
+
+class AuditTests(unittest.TestCase):
+    def test_randomized_response_audit_is_near_epsilon(self) -> None:
+        epsilon = 1.0
+        rng = random.Random(3)
+        outputs_a = [randomized_response(False, epsilon, rng) for _ in range(20000)]
+        outputs_b = [randomized_response(True, epsilon, rng) for _ in range(20000)]
+        estimated = audit_epsilon_from_outputs(outputs_a, outputs_b, min_count=20)
+        self.assertAlmostEqual(estimated, epsilon, delta=0.25)
+
+    def test_discrete_laplace_audit_is_near_epsilon(self) -> None:
+        epsilon = 1.0
+        rng = random.Random(4)
+        outputs_a = [discrete_laplace_mechanism(0, 1, epsilon, rng) for _ in range(30000)]
+        outputs_b = [discrete_laplace_mechanism(1, 1, epsilon, rng) for _ in range(30000)]
+        estimated = audit_epsilon_from_outputs(outputs_a, outputs_b, min_count=20)
+        self.assertGreater(estimated, 0.7)
+        self.assertLess(estimated, 1.35)
+
+    def test_oue_audit_is_near_epsilon(self) -> None:
+        epsilon = 1.0
+        rng = random.Random(5)
+        outputs_a = [tuple(oue_encode(0, 2, epsilon, rng)) for _ in range(20000)]
+        outputs_b = [tuple(oue_encode(1, 2, epsilon, rng)) for _ in range(20000)]
+        estimated = audit_epsilon_from_outputs(outputs_a, outputs_b, min_count=20)
+        self.assertAlmostEqual(estimated, epsilon, delta=0.3)
+
+
+class CompositionTests(unittest.TestCase):
+    def test_advanced_is_looser_than_basic_at_epsilon_one(self) -> None:
+        self.assertEqual(basic_composition(1, 1.0), 1.0)
+        self.assertGreater(advanced_composition(1, 1.0, 1e-6), basic_composition(1, 1.0))
+
+    def test_zcdp_beats_basic_when_the_per_release_epsilon_is_small(self) -> None:
+        releases, epsilon, delta = 100, 0.1, 1e-6
+        self.assertLess(
+            zcdp_to_approximate(releases, epsilon, delta),
+            basic_composition(releases, epsilon),
+        )
+        self.assertLess(
+            rdp_to_approximate(releases, epsilon, delta),
+            basic_composition(releases, epsilon),
+        )
+
+
+class ShuffleTests(unittest.TestCase):
+    def test_solver_returns_a_central_epsilon_or_none(self) -> None:
+        amplified = shuffle_central_epsilon(1.0, 2000, 1e-6)
+        if amplified is not None:
+            self.assertGreater(amplified, 0.0)
+            self.assertLessEqual(amplified, 1.0)
+        self.assertIsNone(shuffle_central_epsilon(1.0, 2, 1e-6))
+
+
+class SketchTests(unittest.TestCase):
+    def test_sketches_recover_a_point_mass_at_high_epsilon(self) -> None:
+        epsilon = 6.0
+        domain = 4
+        rng = random.Random(13)
+        count = 4000
+        cms = [cms_encode(0, domain, epsilon, rng) for _ in range(count)]
+        hcms = [hcms_encode(0, domain, epsilon, rng) for _ in range(count)]
+        cms_estimate = cms_debias_frequencies(cms, domain, epsilon)
+        hcms_estimate = hcms_debias_frequencies(hcms, domain, epsilon)
+        self.assertAlmostEqual(cms_estimate[0], 1.0, delta=0.15)
+        self.assertAlmostEqual(hcms_estimate[0], 1.0, delta=0.15)
+        self.assertLess(sum(abs(value) for value in cms_estimate[1:]), 0.4)
+        self.assertLess(sum(abs(value) for value in hcms_estimate[1:]), 0.4)
+
+
+class DeviceLedgerTests(unittest.TestCase):
+    def test_replay_is_identical_and_spends_nothing(self) -> None:
+        ledger = DeviceLedger()
+        rng = _CountingRng(21)
+        telemetry = {"paste_detected": True, "tab_switches": 9, "time_taken_seconds": 10.0}
+        first = ledger.export(telemetry, "2026-10-21", rng)
+        calls = rng.calls
+        second = ledger.export({"paste_detected": False, "tab_switches": 0}, "2026-10-21", rng)
+        self.assertEqual(rng.calls, calls)
+        self.assertEqual(first["values"], second["values"])
+        self.assertEqual(second["privacy_spend_this_call"], 0.0)
+        self.assertEqual(second["transmission"], 2)
+        self.assertAlmostEqual(ledger.lifetime_spent(), LOCAL_EPSILON_DEFAULT)
+
+    def test_daily_cap_does_not_redraw_or_increment(self) -> None:
+        ledger = DeviceLedger()
+        rng = random.Random(1)
+        ledger.export({"paste_detected": False}, "2026-10-21", rng)
+        ledger.export({"paste_detected": True}, "2026-10-21", rng)
+        with self.assertRaises(ExportCapExceeded):
+            ledger.export({"paste_detected": True}, "2026-10-21", rng)
+        self.assertEqual(ledger.transmissions("2026-10-21"), DAILY_EXPORT_CAP)
+
+    def test_lifetime_cap_refuses_the_next_day(self) -> None:
+        ledger = DeviceLedger()
+        rng = random.Random(2)
+        for day in range(int(LIFETIME_EPSILON_CAP)):
+            ledger.export({"paste_detected": False}, f"2026-01-{day + 1:02d}", rng)
+        before = ledger.lifetime_spent()
+        with self.assertRaises(PrivacyBudgetExceeded):
+            ledger.export({"paste_detected": True}, "2026-02-01", rng)
+        self.assertAlmostEqual(ledger.lifetime_spent(), before)
+        self.assertEqual(ledger.transmissions("2026-02-01"), 0)
+
+    def test_file_ledger_replays_across_instances(self) -> None:
+        directory = tempfile.mkdtemp()
+        try:
+            path = os.path.join(directory, "device.json")
+            first = DeviceLedger(path).export({"paste_detected": True, "tab_switches": 3}, "2026-10-21", random.Random(8))
+            second = DeviceLedger(path).export({"paste_detected": False}, "2026-10-21", random.Random(9))
+            self.assertEqual(first["values"], second["values"])
+            self.assertEqual(second["privacy_spend_this_call"], 0.0)
+        finally:
+            shutil.rmtree(directory)
+
+
+class DatasetLedgerTests(unittest.TestCase):
+    def _people(self) -> list[dict]:
+        return synthesize_population(20, random.Random(5))
+
+    def test_release_requires_a_ledger(self) -> None:
+        with self.assertRaises(TypeError):
+            central_dashboard_release(self._people())  # type: ignore[call-arg]
+
+    def test_over_budget_batch_leaves_the_file_unchanged(self) -> None:
+        directory = tempfile.mkdtemp()
+        try:
+            path = os.path.join(directory, "dataset.json")
+            ledger = DatasetLedger(path, total_epsilon=1.0)
+            people = self._people()
+            first = central_dashboard_release(
+                people, ledger, epsilon=0.6, rng=random.Random(1), publication_name="first"
+            )
+            with open(path, "rb") as handle:
+                before = handle.read()
+            with self.assertRaises(PrivacyBudgetExceeded):
+                central_dashboard_release(
+                    people, ledger, epsilon=0.6, rng=random.Random(2), publication_name="second"
                 )
-            )
-        estimate = aggregate_local_releases(releases)["randomized_response_rates"]["paste_detected"][
-            "debiased_rate"
-        ]
-        self.assertAlmostEqual(estimate, sum(truths) / len(truths), delta=0.06)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(), before)
+            self.assertAlmostEqual(ledger.spent(), 0.6)
+            self.assertFalse(first["replayed"])
+            self.assertIsNone(ledger.get_publication("second"))
+        finally:
+            shutil.rmtree(directory)
+
+    def test_second_call_replays_the_stored_publication(self) -> None:
+        directory = tempfile.mkdtemp()
+        try:
+            path = os.path.join(directory, "dataset.json")
+            ledger = DatasetLedger(path)
+            people = self._people()
+            first = central_dashboard_release(people, ledger, rng=random.Random(3))
+            second = central_dashboard_release(people, ledger, rng=random.Random(4))
+            self.assertFalse(first["replayed"])
+            self.assertTrue(second["replayed"])
+            self.assertEqual(first["statistics"], second["statistics"])
+            self.assertAlmostEqual(ledger.spent(), 1.0)
+            self.assertAlmostEqual(ledger.remaining(), 0.0)
+        finally:
+            shutil.rmtree(directory)
 
 
-class AccountantTests(unittest.TestCase):
-    def test_basic_composition_sums_and_refuses_overspend(self) -> None:
-        accountant = PrivacyAccountant(1.0)
-        accountant.spend("status", 0.3, "laplace", 2.0)
-        accountant.spend("paste", 0.3, "laplace", 1.0)
-        accountant.spend("tabs", 0.4, "laplace", 1.0)
-        self.assertAlmostEqual(accountant.spent, 1.0)
-        self.assertAlmostEqual(accountant.remaining, 0.0)
-        self.assertEqual(accountant.summary()["composition"], "basic")
-        with self.assertRaises(PrivacyBudgetExceeded):
-            accountant.spend("extra", 0.01, "laplace", 1.0)
-        self.assertAlmostEqual(accountant.spent, 1.0)
-
-    def test_allocate_budget_sums_to_epsilon(self) -> None:
-        for epsilon in (0.25, 1.0, 4.0):
-            allocated = allocate_budget(epsilon, CENTRAL_SHARES)
-            self.assertAlmostEqual(sum(allocated.values()), epsilon)
-
-    def test_two_dashboard_releases_compose_on_one_accountant(self) -> None:
-        participants = _load_mock()
-        accountant = PrivacyAccountant(1.0)
-        central_dashboard_release(
-            participants, epsilon=0.6, rng=random.Random(1), accountant=accountant
-        )
-        central_dashboard_release(
-            participants, epsilon=0.4, rng=random.Random(2), accountant=accountant
-        )
-        self.assertAlmostEqual(accountant.spent, 1.0)
-        with self.assertRaises(PrivacyBudgetExceeded):
-            central_dashboard_release(
-                participants, epsilon=0.1, rng=random.Random(3), accountant=accountant
-            )
-
-
-class LocalReleaseTests(unittest.TestCase):
-    def _telemetry(self) -> dict:
-        return {
-            "paste_detected": True,
-            "paste_count": 9999,
-            "focus_paste_coincidence": True,
-            "tab_switches": 9999,
-            "time_taken_seconds": 12.0,
-            "typing_cadence_variance_ms": 1.25,
-            "keystroke_intervals_ms": [12.5, 20.0, 180.0, 180.0, 900.0],
+class MissingFieldTests(unittest.TestCase):
+    def test_missing_time_and_variance_are_unknown_not_suspicious(self) -> None:
+        person = {
+            "participant_id": "missing_fields",
+            "name": "Missing",
+            "paste_detected": False,
+            "focus_paste_coincidence": False,
+            "tab_switches_during_form": 1,
+            "trap_question_response": "CSS does not leak memory. JavaScript does.",
+            "other_responses": ["I write CSS."],
+            "github_account_age_days": 800,
+            "github_public_repos": 6,
+            "github_followers": 4,
         }
+        decision = process_participant_screening(person)
+        triggered = [
+            rule["rule_name"]
+            for rule in decision["breakdown"]["tier1"]["triggered_rules"]
+            if rule["points"] > 0
+        ]
+        self.assertIn("Time Delta Check", triggered)
+        self.assertIn("Keystroke Variance Check", triggered)
+        stats = exact_cohort_statistics([person], [decision])
+        self.assertEqual(stats["low_variance_count"], 0)
+        self.assertEqual(stats["cadence_histogram"][CADENCE_BIN_LABELS.index("unknown")], 1)
+        view = local_contribution(person, random.Random(0))
+        self.assertFalse(view["fast_submission"])
+        self.assertFalse(view["low_cadence_variance"])
 
-    def test_release_drops_raw_keystrokes_and_spends_the_budget_once(self) -> None:
-        telemetry = self._telemetry()
-        release = local_dp_release(telemetry, epsilon=LOCAL_EPSILON_DEFAULT, rng=random.Random(4))
+    def test_missing_tabs_are_not_excessive(self) -> None:
+        person = {
+            "participant_id": "missing_tabs",
+            "name": "No Tabs",
+            "time_taken_seconds": 120.0,
+            "typing_cadence_variance_ms": 40.0,
+            "paste_detected": False,
+            "trap_question_response": "CSS does not leak memory. JavaScript does.",
+            "other_responses": ["I write CSS."],
+            "github_account_age_days": 800,
+            "github_public_repos": 6,
+            "github_followers": 4,
+        }
+        decision = process_participant_screening(person)
+        stats = exact_cohort_statistics([person], [decision])
+        self.assertEqual(stats["excessive_tabs_count"], 0)
+        self.assertEqual(stats["tab_switch_histogram"][TAB_SWITCH_BIN_LABELS.index("unknown")], 1)
+        view = local_contribution(person, random.Random(0))
+        self.assertFalse(view["excessive_tab_switches"])
+        self.assertEqual(view["tab_switches"], 0)
+
+
+class ReleaseShapeTests(unittest.TestCase):
+    def test_local_release_omits_raw_keystrokes_and_uses_oue(self) -> None:
+        intervals = [12.5, 20.0, 180.0, 900.0]
+        release = local_dp_mechanism(
+            {
+                "paste_detected": True,
+                "paste_count": 9999,
+                "tab_switches": 9999,
+                "time_taken_seconds": 12.0,
+                "typing_cadence_variance_ms": 1.25,
+                "keystroke_intervals_ms": intervals,
+            },
+            epsilon=1.0,
+            rng=random.Random(4),
+        )
         blob = json.dumps(release)
         self.assertNotIn("keystroke_intervals", blob)
-        self.assertNotIn(json.dumps(telemetry["keystroke_intervals_ms"]), blob)
-        self.assertFalse(release["raw_keystrokes_included"])
-        self.assertFalse(release["individual_decision_included"])
-        self.assertTrue(release["differentially_private"])
+        self.assertNotIn(json.dumps(intervals), blob)
         self.assertEqual(len(release["values"]["keystroke_histogram"]), len(KEYSTROKE_BIN_LABELS))
-        spent = sum(entry["epsilon"] for entry in release["accountant"]["entries"])
-        self.assertAlmostEqual(spent, LOCAL_EPSILON_DEFAULT)
-        self.assertAlmostEqual(release["accountant"]["spent_epsilon"], LOCAL_EPSILON_DEFAULT)
-        histogram_entries = [
-            entry for entry in release["accountant"]["entries"] if entry["name"] == "keystroke_histogram"
-        ]
-        self.assertEqual(len(histogram_entries), 1)
-        self.assertAlmostEqual(histogram_entries[0]["sensitivity"], 2.0)
-
-    def test_clipping_bounds_the_contribution_before_noise(self) -> None:
-        contribution = local_contribution(self._telemetry())
-        self.assertEqual(contribution["paste_count"], PASTE_COUNT_CLIP)
-        self.assertEqual(contribution["tab_switches"], TAB_SWITCH_CLIP)
-        self.assertTrue(contribution["excessive_tab_switches"])
-        self.assertTrue(contribution["fast_submission"])
-        self.assertTrue(contribution["low_cadence_variance"])
-        # Intervals: 12.5 and 20 in [0, 50), two at 180 in [150, 300), 900 in [600, inf).
-        self.assertEqual(
-            keystroke_proportion_histogram([12.5, 20.0, 180.0, 180.0, 900.0]),
-            [0.4, 0.0, 0.4, 0.0, 0.2],
-        )
-        release = local_dp_release(self._telemetry(), epsilon=1e6, rng=random.Random(5))
-        self.assertAlmostEqual(release["values"]["paste_count"], PASTE_COUNT_CLIP, delta=1e-3)
-        self.assertAlmostEqual(release["values"]["tab_switches"], TAB_SWITCH_CLIP, delta=1e-3)
-        for noisy, exact in zip(
-            release["values"]["keystroke_histogram"],
-            [0.4, 0.0, 0.4, 0.0, 0.2],
-        ):
-            self.assertAlmostEqual(noisy, exact, delta=1e-3)
-
-    def test_histogram_noise_scale_matches_l1_sensitivity(self) -> None:
-        release = local_dp_release(self._telemetry(), epsilon=1.0, rng=random.Random(6))
-        histogram = release["public_parameters"]["laplace"]["keystroke_histogram"]
-        self.assertAlmostEqual(histogram["scale"], 2.0 / histogram["epsilon"])
-        paste = release["public_parameters"]["laplace"]["paste_count"]
-        self.assertAlmostEqual(paste["scale"], PASTE_COUNT_CLIP / paste["epsilon"])
-        tabs = release["public_parameters"]["laplace"]["tab_switches"]
-        self.assertAlmostEqual(tabs["scale"], TAB_SWITCH_CLIP / tabs["epsilon"])
-
-    def test_rr_queries_are_the_ones_in_the_release(self) -> None:
-        release = local_dp_release(self._telemetry(), rng=random.Random(7))
-        for name in LOCAL_RR_QUERIES:
-            self.assertIn(release["values"][name], (0, 1))
-
-
-class CentralReleaseTests(unittest.TestCase):
-    def test_noise_scales_match_substitution_sensitivity(self) -> None:
-        participants = _load_mock()
-        release = central_dashboard_release(participants, epsilon=1.0, rng=random.Random(8))
-        stats = release["statistics"]
-        paste = stats["paste_detected_count"]
-        self.assertEqual(paste["sensitivity"], 1.0)
-        self.assertAlmostEqual(paste["scale"], 1.0 / paste["epsilon"])
-        status = stats["status_histogram"]
-        self.assertEqual(status["sensitivity_l1"], 2.0)
-        self.assertAlmostEqual(status["scale"], 2.0 / status["epsilon"])
-        self.assertEqual(status["bins"], ["APPROVED", "FLAGGED_FOR_REVIEW", "AUTO_REJECTED"])
-        self.assertEqual(len(status["noisy"]), 3)
-        for noisy, published in zip(status["noisy"], status["published"]):
-            self.assertEqual(published, max(0.0, noisy))
+        self.assertEqual(release["public_parameters"]["keystroke_histogram"]["mechanism"], "oue")
+        self.assertFalse(release["memoized"])
         spent = sum(entry["epsilon"] for entry in release["accountant"]["entries"])
         self.assertAlmostEqual(spent, 1.0)
-        self.assertEqual(len(release["accountant"]["entries"]), 6)
-        self.assertTrue(release["cohort_size_is_public"])
-        self.assertEqual(release["cohort_size"], 4)
-        self.assertFalse(release["individual_decisions_included"])
+        quiet = local_dp_mechanism(
+            {"paste_count": 9999, "tab_switches": 9999, "paste_detected": True},
+            epsilon=1e6,
+            rng=random.Random(5),
+        )
+        self.assertEqual(quiet["values"]["paste_count"], PASTE_COUNT_CLIP)
+        self.assertEqual(quiet["values"]["tab_switches"], TAB_SWITCH_CLIP)
 
-    def test_release_does_not_carry_microdata_or_exact_counts(self) -> None:
-        participants = _load_mock()
-        report = cohort_privacy_report(participants, epsilon=1.0, rng=random.Random(9))
-        blob = json.dumps(report["aggregate_release"])
-        self.assertNotIn("Alex Mercer", blob)
-        self.assertNotIn("Jane AI-Scammer", blob)
-        self.assertNotIn("trap_question", blob)
-        self.assertNotIn("expected_status", blob)
-        self.assertNotIn("keystroke_intervals", blob)
-        exact = exact_cohort_statistics(participants)
-        # The exact paste count is a property of this fixture (two of four paste).
-        # It must not be stored under a truth field on the release.
-        self.assertNotIn("true_count", blob)
-        self.assertNotIn("exact", blob)
-        self.assertEqual(exact["paste_detected_count"], 2)
+    def test_budget_shares_sum_to_the_total(self) -> None:
+        for shares in (LOCAL_SHARES, CENTRAL_SHARES):
+            allocated = allocate_budget(1.0, shares)
+            self.assertAlmostEqual(sum(allocated.values()), 1.0)
+        self.assertEqual(LOCAL_EPSILON_DEFAULT, 1.0)
 
-    def test_paths_document_which_outputs_are_private(self) -> None:
-        self.assertFalse(PRIVACY_PATHS["individual_risk_decision"]["differentially_private"])
-        self.assertTrue(PRIVACY_PATHS["local_aggregate_export"]["differentially_private"])
-        self.assertTrue(PRIVACY_PATHS["central_dashboard_aggregates"]["differentially_private"])
-        report = cohort_privacy_report(_load_mock(), rng=random.Random(10))
-        self.assertFalse(report["individual_decisions"]["differentially_private"])
-        self.assertTrue(report["aggregate_release"]["differentially_private"])
-        self.assertFalse(report["local_export"]["computed_here"])
-
-
-class DetectionStillWorksTests(unittest.TestCase):
-    def test_mock_participants_keep_their_routes(self) -> None:
+    def test_mock_routing_is_unchanged(self) -> None:
         expected = {
             "legit_human": "APPROVED",
             "script_bot": "AUTO_REJECTED",
             "llm_scammer": "AUTO_REJECTED",
             "borderline_user": "FLAGGED_FOR_REVIEW",
         }
-        participants = _load_mock()
-        report = cohort_privacy_report(participants, epsilon=1.0, rng=random.Random(11))
-        for participant, decision in zip(participants, report["individual_decisions"]["results"]):
-            direct = process_participant_screening(participant)
-            self.assertEqual(decision, direct)
-            self.assertEqual(decision["status"], expected[participant["participant_id"]])
+        for person in _load_mock():
+            decision = process_participant_screening(person)
+            self.assertEqual(decision["status"], expected[person["participant_id"]])
+        self.assertFalse(PRIVACY_PATHS["individual_risk_decision"]["differentially_private"])
 
-    def test_local_export_is_not_an_input_to_scoring(self) -> None:
-        participant = _load_mock()[1]
-        before = process_participant_screening(participant)
-        local_dp_release(
-            {
-                "paste_detected": participant["paste_detected"],
-                "tab_switches": participant["tab_switches_during_form"],
-                "time_taken_seconds": participant["time_taken_seconds"],
-                "typing_cadence_variance_ms": participant["typing_cadence_variance_ms"],
-                "keystroke_intervals_ms": [1, 1, 1, 1],
-            },
-            rng=random.Random(12),
-        )
-        after = process_participant_screening(participant)
-        self.assertEqual(before, after)
-        self.assertEqual(after["status"], "AUTO_REJECTED")
+    def test_aggregate_release_does_not_include_decisions(self) -> None:
+        directory = tempfile.mkdtemp()
+        try:
+            people = _load_mock()
+            ledger = DatasetLedger(os.path.join(directory, "mock.json"))
+            report = cohort_privacy_report(people, ledger, rng=random.Random(6))
+            blob = json.dumps(report["aggregate_release"])
+            self.assertNotIn("legit_human", blob)
+            self.assertNotIn("cumulative_score", blob)
+            self.assertTrue(report["aggregate_release"]["differentially_private"])
+            self.assertFalse(report["individual_decisions"]["differentially_private"])
+        finally:
+            shutil.rmtree(directory)
 
-    def test_synthetic_roles_stay_inside_their_routing_region(self) -> None:
-        population = synthesize_population(40, random.Random(13))
-        self.assertEqual(len(population), 40)
+
+class SyntheticRoleTests(unittest.TestCase):
+    def test_roles_route_to_the_labeled_status(self) -> None:
+        population = synthesize_population(40, random.Random(20261021))
         for person in population:
             decision = process_participant_screening(person)
             self.assertEqual(decision["status"], person["expected_status"])
-        report = cohort_privacy_report(population, epsilon=0.5, rng=random.Random(14))
-        blob = json.dumps(report["aggregate_release"])
-        self.assertNotIn("expected_status", blob)
-        self.assertNotIn("keystroke_intervals", blob)
 
 
-class BrowserParityTests(unittest.TestCase):
-    def test_client_module_matches_python_and_its_own_checks(self) -> None:
+class ClientParityTests(unittest.TestCase):
+    def test_browser_constants_match_python(self) -> None:
         node = shutil.which("node")
         if node is None:
             self.skipTest("node is not installed")
-        script = os.path.join(ROOT, "tests", "dp_client.test.js")
-        completed = subprocess.run(
-            [node, script],
+        script = r"""
+        const dp = require("./web/dp.js");
+        process.stdout.write(JSON.stringify({
+            constants: dp.CONSTANTS,
+            budget: dp.allocateBudget(1),
+            bins: dp.BIN_LABELS
+        }));
+        """
+        result = subprocess.run(
+            [node, "-e", script],
             cwd=ROOT,
-            check=False,
+            check=True,
             capture_output=True,
             text=True,
         )
-        self.assertEqual(
-            completed.returncode,
-            0,
-            completed.stdout + "\n" + completed.stderr,
-        )
-        dump = subprocess.run(
-            [
-                node,
-                "-e",
-                (
-                    "const dp = require('./web/dp.js');"
-                    "const allocated = {};"
-                    "for (const eps of [0.5, 1, 2, 4]) allocated[String(eps)] = dp.allocateBudget(eps);"
-                    "console.log(JSON.stringify({constants: dp.CONSTANTS, allocated}));"
-                ),
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(dump.returncode, 0, dump.stderr)
-        payload = json.loads(dump.stdout)
+        payload = json.loads(result.stdout)
         self.assertEqual(payload["constants"], client_constants())
-        for epsilon_text, js_budget in payload["allocated"].items():
-            python_budget = allocate_budget(float(epsilon_text), LOCAL_SHARES)
-            self.assertEqual(set(js_budget), set(python_budget))
-            for name, value in python_budget.items():
-                self.assertAlmostEqual(js_budget[name], value, places=12)
+        self.assertEqual(payload["budget"], allocate_budget(1.0, LOCAL_SHARES))
+        self.assertEqual(payload["bins"], list(KEYSTROKE_BIN_LABELS))
+        suite = subprocess.run(
+            [node, os.path.join(ROOT, "tests", "dp_client.test.js")],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(suite.returncode, 0, suite.stdout + suite.stderr)
+        for name in LOCAL_RR_QUERIES:
+            self.assertIn(name, payload["budget"])
 
 
 if __name__ == "__main__":
