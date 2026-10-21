@@ -168,6 +168,97 @@ def run_automated_tests(participants: List[Dict[str, Any]]) -> bool:
     return all_passed
 
 
+def run_dp_unit_tests(base_dir: str) -> bool:
+    """Runs the differential-privacy unittest suite."""
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(
+        os.path.join(base_dir, "tests"),
+        pattern="test_*.py",
+    )
+    print(f"\n{CLR_BOLD}RUNNING DIFFERENTIAL PRIVACY TESTS...{CLR_RESET}")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    return result.wasSuccessful()
+
+
+def display_privacy_analytics(participants: List[Dict[str, Any]]) -> None:
+    """Print exact decisions beside the central DP aggregate release.
+
+    Exact query answers are shown as a curator-only comparison. They are not
+    fields on the release object.
+    """
+    import random
+    from src.analytics import cohort_privacy_report, exact_cohort_statistics
+
+    report = cohort_privacy_report(participants, rng=random.SystemRandom())
+    decisions = report["individual_decisions"]["results"]
+    exact = exact_cohort_statistics(participants, decisions)
+    release = report["aggregate_release"]
+    cohort_size = release["cohort_size"]
+
+    print(f"\n{CLR_BOLD}PRIVACY REPORT{CLR_RESET}  mock cohort n={cohort_size}")
+    print(f"{CLR_YELLOW}Individual decisions are exact and are NOT differentially private.{CLR_RESET}")
+    print(f"{CLR_DIM}{report['individual_decisions']['reason']}{CLR_RESET}\n")
+
+    print(f"{CLR_DIM}{'Participant':<22} {'Status':<22} {'Score':>6}{CLR_RESET}")
+    for decision in decisions:
+        color = get_status_color(decision["status"])
+        print(
+            f"{decision['participant_id']:<22} {color}{decision['status']:<22}{CLR_RESET} "
+            f"{decision['cumulative_score']:>6}"
+        )
+
+    print(f"\n{CLR_CYAN}{CLR_BOLD}Central DP aggregate release{CLR_RESET}")
+    print(
+        f"  ε={release['epsilon']:.2f}  composition=basic  "
+        f"spent={release['accountant']['spent_epsilon']:.2f}  "
+        f"remaining={release['accountant']['remaining_epsilon']:.2f}"
+    )
+    print(f"  {CLR_DIM}{release['cohort_size_reason']}{CLR_RESET}")
+    print(f"  {CLR_DIM}Curator columns are not part of the released object.{CLR_RESET}")
+
+    def print_count(label: str, exact_value: int, stat: Dict[str, Any]) -> None:
+        print(
+            f"  {label:<24} curator {exact_value:>6}   "
+            f"noisy {stat['noisy']:>8.2f}   published {stat['published']:>8.2f}   "
+            f"ε={stat['epsilon']:.2f}  scale={stat['scale']:.2f}"
+        )
+
+    stats = release["statistics"]
+    print_count("Paste detected", exact["paste_detected_count"], stats["paste_detected_count"])
+    print_count("Low cadence variance", exact["low_variance_count"], stats["low_variance_count"])
+    print_count("Excessive tab switches", exact["excessive_tabs_count"], stats["excessive_tabs_count"])
+
+    def print_histogram(label: str, exact_counts: List[int], stat: Dict[str, Any]) -> None:
+        print(f"\n  {CLR_BOLD}{label}{CLR_RESET}  L1 sensitivity {stat['sensitivity_l1']}  "
+              f"ε={stat['epsilon']:.2f}  scale={stat['scale']:.2f}")
+        for name, exact_value, noisy, published in zip(
+            stat["bins"], exact_counts, stat["noisy"], stat["published"]
+        ):
+            print(
+                f"    {name:<22} curator {exact_value:>6}   "
+                f"noisy {noisy:>8.2f}   published {published:>8.2f}"
+            )
+
+    print_histogram("Status", exact["status_histogram"], stats["status_histogram"])
+    print_histogram("Tab switches", exact["tab_switch_histogram"], stats["tab_switch_histogram"])
+    print_histogram("Cadence variance (ms)", exact["cadence_histogram"], stats["cadence_histogram"])
+
+    print(f"\n  {CLR_BOLD}Ledger{CLR_RESET}")
+    for entry in release["accountant"]["entries"]:
+        print(
+            f"    {entry['name']:<24} {entry['mechanism']:<12} "
+            f"ε={entry['epsilon']:.2f}  Δ={entry['sensitivity']}"
+        )
+
+    if cohort_size < 50:
+        print(
+            f"\n{CLR_YELLOW}n={cohort_size} is smaller than the noise scale. "
+            f"These counts show the mechanism; they are not a prevalence. "
+            f"See docs/dp-evaluation.md for error at n=2000.{CLR_RESET}\n"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Verified-Human: Advanced Fraud Operations & Semantic Security Pipeline CLI",
@@ -184,7 +275,11 @@ def main() -> None:
     )
     group.add_argument(
         "--test", action="store_true",
-        help="Execute the automated test suite."
+        help="Execute the routing checks and the differential-privacy tests."
+    )
+    group.add_argument(
+        "--analytics", action="store_true",
+        help="Print exact decisions and a central DP aggregate release for the mock cohort."
     )
 
     args = parser.parse_args()
@@ -201,8 +296,13 @@ def main() -> None:
         participants = json.load(f)
 
     if args.test:
-        success = run_automated_tests(participants)
-        sys.exit(0 if success else 1)
+        routing_ok = run_automated_tests(participants)
+        privacy_ok = run_dp_unit_tests(base_dir)
+        sys.exit(0 if routing_ok and privacy_ok else 1)
+
+    if args.analytics:
+        display_privacy_analytics(participants)
+        sys.exit(0)
 
     if args.all:
         print(f"\n{CLR_BOLD}🔍 AUDITING ALL PARTICIPANTS IN MOCK DATABASE...{CLR_RESET}")
@@ -230,20 +330,24 @@ def main() -> None:
     
     print(f"  {len(participants)+1}. Run all automated tests")
     print(f"  {len(participants)+2}. Run audit for all participants")
-    print(f"  {len(participants)+3}. Exit")
+    print(f"  {len(participants)+3}. Run privacy analytics")
+    print(f"  {len(participants)+4}. Exit")
 
     try:
-        choice = input(f"\nSelect a menu option (1-{len(participants)+3}): ").strip()
+        choice = input(f"\nSelect a menu option (1-{len(participants)+4}): ").strip()
         choice_idx = int(choice) - 1
         
         if choice_idx == len(participants):
-            success = run_automated_tests(participants)
-            sys.exit(0 if success else 1)
+            routing_ok = run_automated_tests(participants)
+            privacy_ok = run_dp_unit_tests(base_dir)
+            sys.exit(0 if routing_ok and privacy_ok else 1)
         elif choice_idx == len(participants) + 1:
             for p in participants:
                 report = process_participant_screening(p)
                 display_risk_report(report, p)
         elif choice_idx == len(participants) + 2:
+            display_privacy_analytics(participants)
+        elif choice_idx == len(participants) + 3:
             print("Exiting...")
             sys.exit(0)
         elif 0 <= choice_idx < len(participants):

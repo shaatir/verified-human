@@ -83,7 +83,7 @@
 
         <aside class="demo-notice" aria-label="Prototype boundary">
             <span class="demo-notice__label">Prototype boundary</span>
-            <p>All profiles and footprint data are simulated. This demo illustrates triage signals; it does not establish a person's identity or replace human review.</p>
+            <p>All profiles and footprint data are simulated. This demo illustrates triage signals; it does not establish a person's identity or replace human review. Individual risk scores are exact. Aggregate telemetry is exported with local differential privacy, and raw keystroke timings stay in the browser.</p>
         </aside>
 
         <footer class="app-footer">
@@ -306,6 +306,8 @@
                             <div class="tier-rules-list" id="lbl-t3-rules"></div>
                         </div>
                     </div>
+
+                    <div class="privacy-export" id="privacy-export-demo" hidden></div>
                 </div>
             </div>
         </div>
@@ -381,6 +383,8 @@
                 </div>
             </div>
 
+            <div class="privacy-export" id="privacy-export-modal" hidden></div>
+
             <button class="btn-primary" id="btn-modal-close" style="width: 100%; margin-top: 1.5rem;">
                 Close and Finish
             </button>
@@ -388,6 +392,7 @@
     </div>
 
     <!-- JS Logic Core -->
+    <script src="dp.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,11 @@
 """Core orchestrator and risk score aggregator pipeline for Project Verified-Human.
 
 Combines deterministic behavioral dynamics, OSINT footprints, and semantic evaluation.
+
+Individual routing in this module is exact on purpose. It is not differentially
+private: approve, flag, and reject are decisions about one person, and noise
+would change who is stopped. Aggregate releases live in ``src.analytics`` and
+must not be fed back into these scores.
 """
 
 from typing import Dict, Any

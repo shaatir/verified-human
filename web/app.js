@@ -182,6 +182,9 @@ function updateFormLabels(prefix, category) {
 }
 
 
+// Risk scores below are exact. They are not differentially private.
+// web/dp.js builds the separate local-DP export for aggregate analytics.
+
 // --- Unified Core Evaluation Algorithm ---
 
 function evaluateTrapQuestion(text, category) {
@@ -381,6 +384,7 @@ let manualTelemetry = {
     intervals: [],
     lastKey: null,
     paste: false,
+    pasteCount: 0,
     lastFocusTime: null,
     focusPasteCoincidence: false,
     switches: 0
@@ -397,6 +401,7 @@ function resetManualTelemetry() {
         intervals: [],
         lastKey: null,
         paste: false,
+        pasteCount: 0,
         lastFocusTime: null,
         focusPasteCoincidence: false,
         switches: 0
@@ -440,6 +445,7 @@ const manualTrapText = document.getElementById('manual-trap');
     el.addEventListener('paste', () => {
         startManualTimer();
         manualTelemetry.paste = true;
+        manualTelemetry.pasteCount += 1;
         // Check for Focus-Paste Coincidence (within 1.5 seconds of returning to tab focus)
         if (manualTelemetry.lastFocusTime !== null && (Date.now() - manualTelemetry.lastFocusTime) < 1500) {
             manualTelemetry.focusPasteCoincidence = true;
@@ -500,6 +506,7 @@ document.getElementById('btn-manual-submit').addEventListener('click', async () 
         time: manualTelemetry.timeTaken,
         variance: finalVariance,
         paste: manualTelemetry.paste,
+        pasteCount: manualTelemetry.pasteCount,
         focusPasteCoincidence: manualTelemetry.focusPasteCoincidence,
         switches: manualTelemetry.switches,
         signature: signatureHex,
@@ -556,6 +563,12 @@ document.getElementById('btn-manual-submit').addEventListener('click', async () 
     document.getElementById('lbl-modal-t1-score').textContent = `${result.t1Score} pts`;
     document.getElementById('lbl-modal-t2-score').textContent = `${result.t2Score} pts`;
     document.getElementById('lbl-modal-t3-score').textContent = `${result.t3Score} pts`;
+
+    renderPrivacyExport(
+        document.getElementById('privacy-export-modal'),
+        metrics,
+        manualTelemetry.intervals.slice()
+    );
 
     // Open Modal Popup
     modalContainer.classList.remove('hidden');
@@ -621,6 +634,11 @@ function resetDemoSandbox() {
     // Reset Sandbox reports
     reportEmpty.classList.remove('hidden');
     reportResults.classList.add('hidden');
+    const privacyDemo = document.getElementById('privacy-export-demo');
+    if (privacyDemo) {
+        privacyDemo.hidden = true;
+        privacyDemo.replaceChildren();
+    }
     reportStatusBadge.textContent = "AWAITING SUBMISSION";
     reportStatusBadge.style.color = "var(--text-muted)";
     reportStatusBadge.style.background = "hsla(217, 32%, 60%, 0.1)";
@@ -879,7 +897,77 @@ btnDemoSubmit.addEventListener('click', async () => {
     lblT1Score.textContent = `${result.t1Score} pts`;
     lblT2Score.textContent = `${result.t2Score} pts`;
     lblT3Score.textContent = `${result.t3Score} pts`;
+
+    renderPrivacyExport(
+        document.getElementById('privacy-export-demo'),
+        telemetry,
+        simulatedIntervals.slice()
+    );
 });
+
+function renderPrivacyExport(container, metrics, intervals) {
+    if (!container || typeof VerifiedHumanDP === "undefined") return;
+    const release = VerifiedHumanDP.localRelease({
+        paste_detected: Boolean(metrics.paste),
+        paste_count: metrics.pasteCount != null ? metrics.pasteCount : (metrics.paste ? 1 : 0),
+        focus_paste_coincidence: Boolean(metrics.focusPasteCoincidence),
+        tab_switches: metrics.switches || 0,
+        time_taken_seconds: metrics.time || 0,
+        typing_cadence_variance_ms: metrics.variance,
+        keystroke_intervals_ms: intervals || []
+    });
+    const summary = VerifiedHumanDP.summarizeRelease(release);
+    container.hidden = false;
+    container.replaceChildren();
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Privacy-preserving analytics";
+    container.appendChild(heading);
+
+    const flag = document.createElement("div");
+    flag.className = "privacy-flag";
+    flag.textContent = summary.headline;
+    container.appendChild(flag);
+
+    const decision = document.createElement("p");
+    decision.textContent = summary.decision_note;
+    container.appendChild(decision);
+
+    const exportNote = document.createElement("p");
+    exportNote.textContent = summary.export_note;
+    container.appendChild(exportNote);
+
+    const rows = document.createElement("dl");
+    rows.className = "privacy-rows";
+    summary.rows.forEach(function (row) {
+        const term = document.createElement("dt");
+        term.textContent = row.label;
+        const value = document.createElement("dd");
+        value.textContent = row.value;
+        rows.appendChild(term);
+        rows.appendChild(value);
+    });
+    container.appendChild(rows);
+
+    const ledger = document.createElement("details");
+    const ledgerSummary = document.createElement("summary");
+    ledgerSummary.textContent = "Privacy ledger (basic composition)";
+    ledger.appendChild(ledgerSummary);
+    const ledgerRows = document.createElement("div");
+    ledgerRows.className = "privacy-ledger";
+    release.accountant.entries.forEach(function (entry) {
+        const line = document.createElement("div");
+        const name = document.createElement("span");
+        name.textContent = entry.name + " · " + entry.mechanism;
+        const spend = document.createElement("span");
+        spend.textContent = "ε " + entry.epsilon.toFixed(2);
+        line.appendChild(name);
+        line.appendChild(spend);
+        ledgerRows.appendChild(line);
+    });
+    ledger.appendChild(ledgerRows);
+    container.appendChild(ledger);
+}
 
 function renderRulesTreeDOM(container, triggeredList, allRuleNames) {
     container.innerHTML = "";

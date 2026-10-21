@@ -1236,6 +1236,91 @@ input:disabled, textarea:disabled {
     color: var(--color-primary);
 }
 
+.privacy-export {
+    margin-top: 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: #0d1117;
+    padding: 0.9rem 1rem 1rem;
+}
+
+.privacy-export h3 {
+    font-size: 0.95rem;
+    color: var(--text-dark);
+    margin-bottom: 0.45rem;
+}
+
+.privacy-flag {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-flagged);
+    border: 1px solid rgba(210, 153, 34, 0.45);
+    border-radius: 99px;
+    padding: 0.12rem 0.5rem;
+}
+
+.privacy-export p {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin: 0.45rem 0 0;
+}
+
+.privacy-rows {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.28rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.privacy-rows dt {
+    color: var(--text-muted);
+}
+
+.privacy-rows dd {
+    color: var(--text-dark);
+    text-align: right;
+    margin: 0;
+}
+
+.privacy-export details {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.privacy-export summary {
+    cursor: pointer;
+    color: var(--color-primary);
+}
+
+.privacy-ledger {
+    margin-top: 0.45rem;
+    font-family: var(--font-mono);
+}
+
+.privacy-ledger div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.12rem 0;
+}
+
+@media (max-width: 768px) {
+    .privacy-rows {
+        grid-template-columns: 1fr;
+    }
+
+    .privacy-rows dd {
+        text-align: left;
+        margin-bottom: 0.35rem;
+    }
+}
+
 .modal-rules-container {
     max-height: 300px;
     overflow-y: auto;
